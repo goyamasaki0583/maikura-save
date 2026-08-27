@@ -1,0 +1,3086 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minecraft風 3Dボクセルゲーム (完全版)</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            overflow: hidden; background-color: #87CEEB;
+            font-family: 'Courier New', Courier, monospace; user-select: none;
+            touch-action: none; -webkit-user-select: none;
+        }
+        #game-canvas { display: block; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10; pointer-events: none;
+            display: flex; flex-direction: column; justify-content: space-between;
+        }
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.8); font-size: 24px; font-weight: bold; text-shadow: 1px 1px 2px #000;
+        }
+        #info-panel {
+            padding: 15px; color: white; text-shadow: 1px 1px 0px #000;
+            background: rgba(0, 0, 0, 0.3); border-bottom-right-radius: 10px; width: fit-content;
+        }
+        #controls-panel {
+            position: absolute; top: 15px; right: 15px; padding: 10px 15px;
+            color: rgba(255, 255, 255, 0.8); text-shadow: 1px 1px 0px #000;
+            background: rgba(0, 0, 0, 0.3); border-radius: 8px; font-size: 12px; line-height: 1.6; text-align: right;
+        }
+
+        #hotbar-container { display: flex; justify-content: center; margin-bottom: 20px; gap: 4px; pointer-events: auto; }
+        .hotbar-slot {
+            width: 48px; height: 48px; background-color: rgba(139, 139, 139, 0.6);
+            border: 3px solid #373737; border-radius: 4px; display: flex;
+            justify-content: center; align-items: center; position: relative;
+            box-shadow: inset 2px 2px 0px rgba(255,255,255,0.3), inset -2px -2px 0px rgba(0,0,0,0.3);
+        }
+        .hotbar-slot.active {
+            border-color: #ffffff; background-color: rgba(180, 180, 180, 0.8);
+            transform: scale(1.1); box-shadow: 0 0 10px rgba(255, 255, 255, 0.5); z-index: 11;
+        }
+        .hotbar-slot .slot-number {
+            position: absolute; top: 2px; left: 4px; color: white; font-size: 12px; font-weight: bold; text-shadow: 1px 1px 0 #000;
+        }
+        .block-preview { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; filter: drop-shadow(2px 2px 0px rgba(0,0,0,0.5)); pointer-events: none; }
+
+        #item-popup {
+            position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+            color: white; font-size: 20px; font-weight: bold; text-shadow: 2px 2px 0 #000;
+            background: rgba(0, 0, 0, 0.5); padding: 5px 15px; border-radius: 5px;
+            opacity: 0; transition: opacity 0.3s ease-in-out; pointer-events: none;
+        }
+        #inventory-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); z-index: 20;
+            display: none; justify-content: center; align-items: center; pointer-events: auto;
+        }
+        .inv-window { width: 600px; max-width: 90vw; display: flex; flex-direction: column; }
+        .inv-tabs { display: flex; gap: 4px; margin-bottom: 0; padding-left: 10px; }
+        .inv-tab {
+            padding: 10px 20px; background-color: #b0b0b0; color: #333; font-weight: bold; font-size: 14px;
+            border: 4px solid; border-color: #fff #555 #c6c6c6 #fff; border-bottom: none; cursor: pointer;
+            border-radius: 8px 8px 0 0;
+        }
+        .inv-tab.active {
+            background-color: #c6c6c6; color: #000; padding-bottom: 14px; margin-bottom: -4px;
+            z-index: 10; position: relative; border-color: #fff #555 #c6c6c6 #fff;
+        }
+        .inv-content {
+            background-color: #c6c6c6; border: 4px solid; border-color: #fff #555 #555 #fff;
+            padding: 15px; display: flex; flex-direction: column; gap: 15px; z-index: 5;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+        }
+
+        .inv-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .inv-title { font-size: 18px; font-weight: bold; color: #333; }
+        .inv-item-name-box { font-size: 16px; color: #fff; background: #333; padding: 4px 10px; border-radius: 4px; min-width: 150px; text-align: center; border: 2px inset #000; }
+        .inv-close-btn {
+            width: 32px; height: 32px; flex: 0 0 auto; font-family: 'Courier New', Courier, monospace;
+            font-size: 16px; font-weight: bold; cursor: pointer; color: #fff;
+            background-color: #b03030; border: 3px solid; border-color: #ff8888 #601818 #601818 #ff8888;
+            display: flex; justify-content: center; align-items: center; touch-action: manipulation;
+        }
+        .inv-close-btn:hover { background-color: #c84040; }
+
+        .inv-grid {
+            display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px;
+            overflow-y: auto; align-content: start; min-height: 240px; max-height: 300px;
+        }
+        .inv-slot {
+            width: 48px; height: 48px; background-color: #8b8b8b;
+            border: 2px solid; border-color: #555 #fff #fff #555;
+            display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative;
+        }
+        .inv-slot:hover { background-color: #a0a0a0; }
+        .inv-slot.focused { border-color: #fff; background-color: #b0b0b0; box-shadow: inset 0 0 10px rgba(255,255,255,0.8); }
+        #blocker {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.7); z-index: 30;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            color: white; pointer-events: auto; cursor: pointer;
+        }
+        #blocker h1 { font-size: 3rem; margin-bottom: 10px; text-shadow: 2px 2px 0 #000; }
+        #underwater-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(10, 50, 150, 0.4); z-index: 5; pointer-events: none; display: none;
+            box-shadow: inset 0 0 100px rgba(0,20,80,0.8);
+        }
+        #cart-prompt-overlay, #respawn-prompt-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.5); z-index: 25;
+            display: none; justify-content: center; align-items: center; pointer-events: auto;
+        }
+        .cart-prompt-box {
+            background-color: #c6c6c6; border: 4px solid; border-color: #fff #555 #555 #fff;
+            border-radius: 6px; padding: 20px 30px; text-align: center; box-shadow: 5px 5px 15px rgba(0,0,0,0.5);
+        }
+        .cart-prompt-box p { margin: 0 0 15px 0; font-size: 18px; color: #222; font-weight: bold; }
+        .cart-prompt-box button {
+            font-family: 'Courier New', Courier, monospace; font-size: 15px; font-weight: bold; cursor: pointer;
+            padding: 8px 20px; margin: 0 6px; border: 3px solid; border-color: #fff #555 #555 #fff;
+            background-color: #8b8b8b; color: #fff;
+        }
+        .cart-prompt-box button:hover { background-color: #a0a0a0; }
+
+        /* ==================== モバイル(スマホ・iPad)操作用UI ==================== */
+        /* PCのマウス/キーボード操作は一切変更せず、タッチデバイスの時だけJSでdisplay:blockにする */
+        #mobile-controls {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 12; pointer-events: none; display: none;
+        }
+        #mobile-joystick-zone {
+            position: absolute; left: 22px; bottom: 22px; width: 130px; height: 130px;
+            border-radius: 50%; background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.4);
+            pointer-events: auto; touch-action: none;
+        }
+        #mobile-joystick-knob {
+            position: absolute; left: 50%; top: 50%; width: 55px; height: 55px;
+            margin-left: -27.5px; margin-top: -27.5px;
+            border-radius: 50%; background: rgba(255,255,255,0.55); border: 2px solid rgba(255,255,255,0.8);
+            pointer-events: none;
+        }
+        #mobile-top-buttons {
+            /* 左上には座標表示(#info-panel)があるため重ならないよう右上に配置する
+               (右上のPC用[#controls-panel]はタッチデバイスではJSで非表示にしているため衝突しない) */
+            position: absolute; top: 15px; right: 15px; display: flex; gap: 8px; pointer-events: auto;
+        }
+        #mobile-action-buttons {
+            position: absolute; right: 20px; bottom: 22px; display: flex; flex-direction: column;
+            gap: 12px; align-items: center; pointer-events: auto;
+        }
+        .mobile-ctrl-btn {
+            width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.6);
+            background: rgba(0,0,0,0.4); color: #fff; font-size: 20px; display: flex;
+            justify-content: center; align-items: center; touch-action: none;
+            -webkit-tap-highlight-color: transparent; user-select: none;
+        }
+        .mobile-btn-round { width: 60px; height: 60px; font-size: 24px; background: rgba(0,0,0,0.35); }
+        #mobile-btn-break { background: rgba(200,60,60,0.55); }
+        #mobile-btn-place { background: rgba(60,140,200,0.55); }
+
+        /* ==================== タイトル画面・ログイン・セーブ確認ダイアログ ==================== */
+        /* #blocker(z-index:30)より必ず上に表示し、ログイン・確認が終わるまでゲーム画面へ触れさせない */
+        #title-screen {
+            /* 背景を完全な不透明色にすることで、裏側で初期化中の3D画面(ゲーム本体)が
+               見た目上も一切見えないようにする(「起動時は3D画面を描画せず」を満たすため) */
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #0a0a0f; z-index: 200;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            color: white; text-shadow: 1px 1px 0 #000; pointer-events: auto;
+        }
+        .title-box { text-align: center; padding: 20px; max-width: 90vw; }
+        .title-box h1 { font-size: 2.6rem; margin-bottom: 8px; }
+        .title-status { margin-top: 22px; font-size: 14px; color: #cccccc; line-height: 1.6; }
+        #title-login-buttons { margin-top: 10px; }
+        .title-btn {
+            display: block; width: 340px; max-width: 80vw; margin: 10px auto; padding: 14px 18px;
+            font-family: 'Courier New', Courier, monospace; font-size: 15px; font-weight: bold; cursor: pointer;
+            border: 3px solid; border-color: #fff #555 #555 #fff; color: #fff; border-radius: 4px;
+        }
+        .title-btn-google { background-color: #4285F4; }
+        .title-btn-google:hover { background-color: #5c96f5; }
+        .title-btn-guest { background-color: #7a7a7a; }
+        .title-btn-guest:hover { background-color: #8f8f8f; }
+        #load-world-prompt-overlay, #guest-confirm-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.75); z-index: 210;
+            display: none; justify-content: center; align-items: center; pointer-events: auto;
+        }
+    </style>
+    <!-- Firebase (Authentication & Firestore, v9 compat版) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <!-- ==================== タイトル画面・ログイン・セーブ確認ダイアログ ====================
+         ここから4つの要素は、以下のゲーム本体(#game-canvas 以下)より必ず手前(z-indexが高い)に表示され、
+         ログイン/ゲストプレイの選択・確認が完了するまでゲーム画面を隠し続ける。
+         ゲーム本体側のHTML/CSS/JSは一切変更していない。 -->
+    <div id="title-screen">
+        <div class="title-box">
+            <h1>Voxel Game</h1>
+            <div id="title-login-buttons" style="display:none;">
+                <button id="google-login-btn" class="title-btn title-btn-google">Googleアカウントでログイン(セーブ可能)</button>
+                <button id="guest-play-btn" class="title-btn title-btn-guest">ログインせずにスタート(セーブ不可)</button>
+            </div>
+            <div id="title-loading" class="title-status">Firebaseに接続しています…</div>
+            <div id="title-user-info" class="title-status" style="display:none;"></div>
+        </div>
+    </div>
+    <div id="load-world-prompt-overlay">
+        <div class="cart-prompt-box">
+            <p>前回のワールドを読み込みますか?</p>
+            <button id="load-world-yes">はい</button>
+            <button id="load-world-no">いいえ(新規作成)</button>
+        </div>
+    </div>
+    <div id="guest-confirm-overlay">
+        <div class="cart-prompt-box">
+            <p>ログインしていないため、今回遊んだワールドは保存されません。<br>よろしいですか?</p>
+            <button id="guest-confirm-yes">はい</button>
+            <button id="guest-confirm-no">いいえ</button>
+        </div>
+    </div>
+    <div id="game-canvas"></div>
+    <div id="underwater-overlay"></div>
+    <div id="cart-prompt-overlay">
+        <div class="cart-prompt-box">
+            <p>トロッコに乗りますか?</p>
+            <button id="cart-ride-yes">乗る</button>
+            <button id="cart-ride-no">乗らない</button>
+        </div>
+    </div>
+    <div id="respawn-prompt-overlay">
+        <div class="cart-prompt-box">
+            <p>リスポーンしますか?</p>
+            <button id="respawn-yes">はい</button>
+            <button id="respawn-no">いいえ</button>
+        </div>
+    </div>
+    <div id="blocker">
+        <h1>Voxel Game</h1>
+        <p id="blocker-start-hint">画面をクリックしてプレイ開始</p>
+        <p class="blocker-pc-hint" style="margin-top: 20px; font-size: 14px; color: #aaa;">[W][A][S][D]: 移動 | [Space]: ジャンプ / 泳ぐ</p>
+        <p class="blocker-pc-hint" style="font-size: 14px; color: #aaa;">[左クリック]: 破壊 | [右クリック]: 設置</p>
+        <p class="blocker-pc-hint" style="font-size: 14px; color: #ffaa00;">[E]: インベントリを開く</p>
+        <p id="blocker-touch-hint" style="display:none; margin-top: 20px; font-size: 14px; color: #aaa; line-height:1.6;">左下のスティックで移動<br>画面をドラッグで視点操作<br>右下のボタンで ジャンプ・破壊・設置</p>
+        <p style="margin-top: 24px; font-size: 11px; color: #999; max-width: 480px; line-height: 1.6; padding: 0 16px; text-align: center;">
+            【お知らせとお願い】<br>
+            当サイトは、個人のプログラミング学習および技術研究を目的として作成されたテストページです。<br>
+            『マインクラフト（Minecraft）』の開発者様や関係者様に不利益を与える意図、および権利を侵害する目的は一切ございません。<br>
+            一般に向けた公開を想定したものではないため、偶然アクセスされた方は、恐れ入りますが速やかに当サイトからご退室（ブラウザのタブを閉じる等）いただきますようお願い申し上げます。
+        </p>
+    </div>
+    <div id="ui-layer">
+        <div id="info-panel">
+            <div>座標: <span id="coordinates">0, 0, 0</span></div>
+        </div>
+        <div id="controls-panel">
+            <div>[W][A][S][D]: 移動</div>
+            <div>[Space]: ジャンプ / 泳ぐ</div>
+            <div>[クリック]: 破壊/設置</div>
+            <div><span style="color:#ffaa00">[E]: インベントリ</span></div>
+            <div>[V]: 視点切替</div>
+            <div>[Q]: リスポーン</div>
+        </div>
+        <div id="crosshair">+</div>
+        <div id="item-popup">ブロック名</div>
+        <div id="hotbar-container"></div>
+    </div>
+    <div id="inventory-overlay">
+        <div class="inv-window">
+            <div class="inv-tabs">
+                <div class="inv-tab active" data-tab="minerals">建材・鉱物</div>
+                <div class="inv-tab" data-tab="furniture">家具・内装</div>
+                <div class="inv-tab" data-tab="others">その他</div>
+                <div class="inv-tab" data-tab="animals">動物</div>
+            </div>
+            <div class="inv-content">
+                <div class="inv-header">
+                    <div class="inv-title">アイテム一覧</div>
+                    <div class="inv-item-name-box" id="inv-item-name">アイテム名</div>
+                    <button id="inv-close-btn" class="inv-close-btn" title="閉じる">✕</button>
+                </div>
+                <div class="inv-grid" id="inv-grid"></div>
+                <div style="font-size: 12px; color: #555; margin-top: 5px; text-align: center;">[十字キー]で選択 / [Enter]でホットバーに追加 / [E]で閉じる</div>
+            </div>
+        </div>
+    </div>
+    <div id="mobile-controls">
+        <div id="mobile-joystick-zone"><div id="mobile-joystick-knob"></div></div>
+        <div id="mobile-top-buttons">
+            <button id="mobile-btn-inventory" class="mobile-ctrl-btn" title="インベントリ">🎒</button>
+            <button id="mobile-btn-view" class="mobile-ctrl-btn" title="視点切替">👁</button>
+            <button id="mobile-btn-respawn" class="mobile-ctrl-btn" title="リスポーン">⟳</button>
+        </div>
+        <div id="mobile-action-buttons">
+            <button id="mobile-btn-jump" class="mobile-ctrl-btn mobile-btn-round" title="ジャンプ/泳ぐ">↑</button>
+            <button id="mobile-btn-break" class="mobile-ctrl-btn mobile-btn-round" title="破壊">⛏</button>
+            <button id="mobile-btn-place" class="mobile-ctrl-btn mobile-btn-round" title="設置">▦</button>
+        </div>
+    </div>
+    <script>
+        // ==================== サイトアクセス制限 ====================
+        // ・file:// で直接開いた場合(ローカル実行)
+        // ・許可されていないドメインからのアクセスの場合(他サイトへの無断転載など)
+        // は、これより下の処理(Firebase初期化・3D描画・ゲームロジックのすべて)を一切実行せずブロックする。
+        // ★実際に公開するときは、ALLOWED_HOSTNAMES に運用ドメイン名を追加してください。
+        // ★現在は動作確認のため、サイトアクセス制限を一時的に無効にしています。
+        //   本番の専用サイトへ公開するタイミングで true に戻し、ALLOWED_HOSTNAMES に
+        //   実際の運用ドメインを追加してください。
+        const ENABLE_SITE_ACCESS_RESTRICTION = false;
+        (function enforceSiteAccessRestriction() {
+            if (!ENABLE_SITE_ACCESS_RESTRICTION) return; // 制限が無効な間は何もせずそのまま通す
+            const ALLOWED_HOSTNAMES = ['localhost', '127.0.0.1']; // 例: 'your-domain.example.com' を追加
+            const isFileProtocol = window.location.protocol === 'file:';
+            const isAllowedHost = ALLOWED_HOSTNAMES.indexOf(window.location.hostname) !== -1;
+            if (isFileProtocol || !isAllowedHost) {
+                document.body.innerHTML =
+                    '<div style="position:fixed;top:0;left:0;width:100%;height:100%;' +
+                    'background:#111;color:#fff;display:flex;flex-direction:column;' +
+                    'justify-content:center;align-items:center;font-family:\'Courier New\',Courier,monospace;' +
+                    'text-align:center;padding:20px;box-sizing:border-box;z-index:9999;">' +
+                    '<h1 style="font-size:1.6rem;margin-bottom:16px;">アクセスできません</h1>' +
+                    '<p style="font-size:1rem;line-height:1.8;">このゲームは専用サイトにアクセスしてプレイしてください。</p>' +
+                    '</div>';
+                // ここで例外を発生させることで、このscriptタグ内に残っている
+                // 以降の処理(このあとの全コード)の実行を確実に停止させる。
+                throw new Error('このサイトからのアクセスは許可されていません (protocol=' + window.location.protocol + ', hostname=' + window.location.hostname + ')');
+            }
+        })();
+
+        function generateIcon(type, color, name) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = color || '#aaaaaa';
+
+            if (type === 'basic' && name === '本棚') {
+                ctx.fillStyle = '#7a5230'; ctx.fillRect(16, 16, 32, 32);
+                ctx.fillStyle = '#9c6b3f'; ctx.fillRect(16, 16, 32, 4); ctx.fillRect(16, 44, 32, 4);
+                const bookColors = ['#b23a2e', '#2e6db2', '#3a8f3a', '#c9a227', '#7a3a9c', '#1f7a7a', '#c9622a', '#8f1f3a'];
+                for (let col = 0; col < 8; col++) {
+                    ctx.fillStyle = bookColors[col % bookColors.length];
+                    ctx.fillRect(16 + col * 4, 20, 4, 24);
+                }
+                ctx.strokeStyle = '#000'; ctx.strokeRect(16, 16, 32, 32);
+            } else if (type === 'basic') {
+                ctx.fillRect(16, 16, 32, 32);
+                ctx.strokeStyle = '#000'; ctx.strokeRect(16, 16, 32, 32);
+            } else if (type === 'bucket') {
+                ctx.fillStyle = '#aaaaaa'; ctx.beginPath(); ctx.arc(32, 40, 16, 0, Math.PI, false); ctx.fill();
+                ctx.fillRect(16, 24, 32, 16);
+                ctx.fillStyle = '#3366ff'; ctx.fillRect(18, 24, 28, 6);
+                ctx.strokeStyle = '#555'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(16, 24); ctx.quadraticCurveTo(32, 10, 48, 24); ctx.stroke();
+            } else if (type === 'bed') {
+                ctx.fillStyle = color; ctx.fillRect(16, 26, 32, 24);
+                ctx.fillStyle = '#fff'; ctx.fillRect(16, 16, 32, 10);
+            } else if (type === 'door') {
+                ctx.fillStyle = color; ctx.fillRect(20, 10, 24, 44);
+                ctx.fillStyle = 'rgba(200,230,255,0.4)'; ctx.fillRect(24, 14, 6, 8); ctx.fillRect(34, 14, 6, 8);
+            } else if (type === 'fence') {
+                ctx.fillRect(20, 10, 8, 44); ctx.fillRect(36, 10, 8, 44);
+                ctx.fillRect(10, 20, 44, 8); ctx.fillRect(10, 36, 44, 8);
+            } else if (type === 'chest') {
+                ctx.fillStyle = color; ctx.fillRect(12, 16, 40, 32);
+                ctx.fillStyle = '#000'; ctx.fillRect(12, 30, 40, 2);
+                ctx.fillStyle = '#ccc'; ctx.fillRect(28, 28, 8, 6);
+            } else if (type === 'furnace') {
+                ctx.fillRect(16, 16, 32, 32);
+                ctx.fillStyle = '#222'; ctx.fillRect(22, 30, 20, 12);
+                ctx.fillStyle = '#f90'; ctx.fillRect(24, 34, 4, 6); ctx.fillRect(34, 34, 4, 6);
+            } else if (type === 'carpet') {
+                ctx.fillStyle = color; ctx.fillRect(10, 40, 44, 10);
+                for (let cx = 10; cx < 54; cx += 4) {
+                    ctx.fillStyle = ((cx - 10) / 4) % 2 === 0 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.15)';
+                    ctx.fillRect(cx, 40, 4, 10);
+                }
+                ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.strokeRect(10, 40, 44, 10);
+            } else if (type === 'potted_flower') {
+                ctx.fillStyle = '#b5651d'; ctx.beginPath(); ctx.moveTo(22, 50); ctx.lineTo(42, 50); ctx.lineTo(38, 62); ctx.lineTo(26, 62); ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = '#3a8f3a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(32, 50); ctx.lineTo(32, 30); ctx.stroke();
+                ctx.fillStyle = color || '#ff4466'; ctx.beginPath(); ctx.arc(32, 24, 10, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(29, 21, 3, 0, Math.PI * 2); ctx.fill();
+            } else if (type === 'potted_palm') {
+                ctx.fillStyle = '#b5651d'; ctx.beginPath(); ctx.moveTo(22, 50); ctx.lineTo(42, 50); ctx.lineTo(38, 62); ctx.lineTo(26, 62); ctx.closePath(); ctx.fill();
+                ctx.strokeStyle = '#8b6b3d'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(32, 50); ctx.lineTo(32, 22); ctx.stroke();
+                ctx.strokeStyle = '#2f8f3f'; ctx.lineWidth = 3;
+                [[-16,-8],[16,-8],[-14,4],[14,4],[0,-14]].forEach(([dx,dy]) => {
+                    ctx.beginPath(); ctx.moveTo(32, 22); ctx.lineTo(32 + dx, 22 + dy); ctx.stroke();
+                });
+            } else if (type === 'potted_banana') {
+                ctx.fillStyle = '#b5651d'; ctx.beginPath(); ctx.moveTo(22, 50); ctx.lineTo(42, 50); ctx.lineTo(38, 62); ctx.lineTo(26, 62); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#3fae3f';
+                ctx.beginPath(); ctx.ellipse(20, 34, 12, 6, -0.6, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(44, 34, 12, 6, 0.6, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(32, 24, 10, 14, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#f5d020'; ctx.beginPath(); ctx.arc(38, 40, 5, 0, Math.PI * 2); ctx.fill();
+            } else if (type === 'potted_cactus') {
+                ctx.fillStyle = '#b5651d'; ctx.beginPath(); ctx.moveTo(22, 50); ctx.lineTo(42, 50); ctx.lineTo(38, 62); ctx.lineTo(26, 62); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#2f8f4f';
+                ctx.fillRect(27, 18, 10, 32);
+                ctx.fillRect(17, 30, 8, 16);
+                ctx.fillRect(17, 24, 8, 8);
+            } else if (type === 'candle') {
+                ctx.fillStyle = color; ctx.fillRect(28, 24, 8, 24);
+                ctx.fillStyle = '#f90'; ctx.beginPath(); ctx.arc(32, 18, 4, 0, Math.PI*2); ctx.fill();
+            } else if (type === 'trapdoor') {
+                ctx.fillStyle = color; ctx.fillRect(16, 16, 32, 32);
+                ctx.strokeStyle = '#000'; ctx.strokeRect(16, 16, 32, 32);
+            } else if (type === 'lantern') {
+                ctx.fillStyle = '#555'; ctx.fillRect(28, 10, 8, 6);
+                ctx.fillStyle = '#f90'; ctx.fillRect(24, 16, 16, 24);
+            } else if (type === 'stairs') {
+                ctx.fillStyle = color;
+                ctx.fillRect(16, 32, 32, 16);
+                ctx.fillRect(32, 16, 16, 16);
+                ctx.strokeStyle = '#000'; ctx.strokeRect(16, 32, 32, 16); ctx.strokeRect(32, 16, 16, 16);
+            } else if (type === 'cow') {
+                ctx.fillStyle = '#4a3018'; ctx.fillRect(16, 20, 32, 28);
+                ctx.fillStyle = '#fff'; ctx.fillRect(16, 20, 12, 16); ctx.fillRect(36, 36, 12, 12);
+                ctx.fillStyle = '#999'; ctx.fillRect(10, 10, 4, 12); ctx.fillRect(50, 10, 4, 12);
+                ctx.fillStyle = '#dcaea3'; ctx.fillRect(24, 36, 16, 12);
+                // まん丸のかわいい目(にこっとしたハイライト付き)
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(22, 29, 4, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(42, 29, 4, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(22, 29, 3.0, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(42, 29, 3.0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(23, 27.7, 0.9, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(43, 27.7, 0.9, 0, Math.PI*2); ctx.fill();
+                // 微笑んでいる口
+                ctx.strokeStyle = '#5a2a2a'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(32, 43, 5, 0, Math.PI); ctx.stroke();
+            } else if (type === 'sheep') {
+                ctx.fillStyle = color || '#f2f2f2'; ctx.fillRect(14, 20, 36, 26);
+                ctx.fillStyle = 'rgba(0,0,0,0.1)'; ctx.fillRect(18, 24, 6, 6); ctx.fillRect(34, 30, 6, 6); ctx.fillRect(26, 38, 6, 6);
+                ctx.fillStyle = '#dcaea3'; ctx.fillRect(10, 14, 16, 16);
+                ctx.fillStyle = (color || '#f2f2f2'); ctx.fillRect(10, 8, 16, 8);
+                // まん丸のかわいい目(にこっとしたハイライト付き)
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(15, 21, 3.2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(23, 21, 3.2, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(15, 21, 2.2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(23, 21, 2.2, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(15.6, 20.3, 0.65, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(23.6, 20.3, 0.65, 0, Math.PI*2); ctx.fill();
+                // 微笑んでいる口
+                ctx.strokeStyle = '#5a2a2a'; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.arc(19, 26, 3.2, 0, Math.PI); ctx.stroke();
+                ctx.fillStyle = '#dcaea3'; ctx.fillRect(16, 44, 6, 10); ctx.fillRect(42, 44, 6, 10);
+            } else if (type === 'cat') {
+                ctx.fillStyle = color || '#e8a852';
+                ctx.beginPath(); ctx.arc(32, 34, 18, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(16, 22); ctx.lineTo(22, 6); ctx.lineTo(28, 20); ctx.closePath(); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(48, 22); ctx.lineTo(42, 6); ctx.lineTo(36, 20); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(24, 32, 5, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(40, 32, 5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(24, 32, 3.4, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(40, 32, 3.4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(25, 30.5, 1, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(41, 30.5, 1, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#e0748a'; ctx.beginPath(); ctx.moveTo(32, 40); ctx.lineTo(29, 44); ctx.lineTo(35, 44); ctx.closePath(); ctx.fill();
+                // 微笑んでいる口
+                ctx.strokeStyle = '#5a2a2a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(32, 46, 4.5, 0, Math.PI); ctx.stroke();
+            } else if (type === 'dog') {
+                ctx.fillStyle = color || '#c8935a';
+                ctx.beginPath(); ctx.arc(32, 36, 18, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#8b5a2b';
+                ctx.beginPath(); ctx.ellipse(16, 32, 7, 13, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(48, 32, 7, 13, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(24, 32, 5, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(40, 32, 5, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(24, 32, 3.4, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(40, 32, 3.4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(25, 30.5, 1, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(41, 30.5, 1, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = color || '#c8935a'; ctx.beginPath(); ctx.ellipse(32, 44, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#333'; ctx.beginPath(); ctx.arc(32, 42, 3, 0, Math.PI * 2); ctx.fill();
+                // 微笑んでいる口
+                ctx.strokeStyle = '#5a2a2a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(32, 49, 4, 0, Math.PI); ctx.stroke();
+            } else if (type === 'clownfish') {
+                ctx.fillStyle = '#ff7f27'; ctx.beginPath(); ctx.ellipse(28, 32, 18, 12, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.fillRect(19, 20, 5, 24); ctx.fillRect(33, 20, 5, 24);
+                ctx.fillStyle = '#e85d10'; ctx.beginPath(); ctx.moveTo(46, 32); ctx.lineTo(58, 20); ctx.lineTo(58, 44); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(16, 28, 4, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(16, 28, 2.7, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(16.7, 27.2, 0.8, 0, Math.PI * 2); ctx.fill();
+                // 微笑んでいる口
+                ctx.strokeStyle = '#5a2a2a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(12, 31, 2, 0, Math.PI); ctx.stroke();
+            } else if (type === 'rail') {
+                ctx.fillStyle = '#8b5a2b';
+                ctx.fillRect(16, 20, 32, 4); ctx.fillRect(16, 30, 32, 4); ctx.fillRect(16, 40, 32, 4);
+                ctx.fillStyle = '#aaaaaa';
+                ctx.fillRect(20, 16, 6, 32); ctx.fillRect(38, 16, 6, 32);
+            } else if (type === 'cart') {
+                ctx.fillStyle = color || '#5a4632';
+                ctx.fillRect(12, 24, 40, 18);
+                ctx.strokeStyle = '#000'; ctx.strokeRect(12, 24, 40, 18);
+                ctx.fillStyle = '#888888';
+                ctx.beginPath(); ctx.arc(22, 46, 6, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(42, 46, 6, 0, Math.PI * 2); ctx.fill();
+            } else {
+                ctx.fillRect(16, 16, 32, 32);
+            }
+            return canvas.toDataURL();
+        }
+        function createDoorMaterial(baseColorHex) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = baseColorHex; ctx.fillRect(0, 0, 32, 64);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(4, 34, 10, 10); ctx.fillRect(18, 34, 10, 10);
+            ctx.fillRect(4, 48, 10, 10); ctx.fillRect(18, 48, 10, 10);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fillRect(4, 34, 10, 2); ctx.fillRect(4, 34, 2, 10);
+            ctx.fillRect(18, 34, 10, 2); ctx.fillRect(18, 34, 2, 10);
+            ctx.fillRect(4, 48, 10, 2); ctx.fillRect(4, 48, 2, 10);
+            ctx.fillRect(18, 48, 10, 2); ctx.fillRect(18, 48, 2, 10);
+            ctx.clearRect(6, 6, 8, 10); ctx.clearRect(18, 6, 8, 10);
+            ctx.clearRect(6, 20, 8, 10); ctx.clearRect(18, 20, 8, 10);
+            ctx.fillStyle = 'rgba(200, 230, 255, 0.4)';
+            ctx.fillRect(6, 6, 8, 10); ctx.fillRect(18, 6, 8, 10);
+            ctx.fillRect(6, 20, 8, 10); ctx.fillRect(18, 20, 8, 10);
+            ctx.fillStyle = '#666'; ctx.fillRect(24, 32, 6, 3); ctx.fillRect(26, 35, 2, 4);
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+            return new THREE.MeshLambertMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
+        }
+        function createChestMaterial(baseColorHex) {
+            const size = 32;
+            const sideCanvas = document.createElement('canvas'); sideCanvas.width = size; sideCanvas.height = size;
+            const sCtx = sideCanvas.getContext('2d');
+            sCtx.fillStyle = baseColorHex; sCtx.fillRect(0, 0, size, size);
+            sCtx.fillStyle = '#222';
+            sCtx.fillRect(0, 0, size, 2); sCtx.fillRect(0, size-2, size, 2);
+            sCtx.fillRect(0, 0, 2, size); sCtx.fillRect(size-2, 0, 2, size);
+            sCtx.fillRect(0, 10, size, 2);
+            const sideTex = new THREE.CanvasTexture(sideCanvas);
+            sideTex.magFilter = THREE.NearestFilter; sideTex.minFilter = THREE.NearestFilter;
+
+            const topCanvas = document.createElement('canvas'); topCanvas.width = size; topCanvas.height = size;
+            const tCtx = topCanvas.getContext('2d');
+            tCtx.fillStyle = baseColorHex; tCtx.fillRect(0, 0, size, size);
+            tCtx.fillStyle = '#222';
+            tCtx.fillRect(0, 0, size, 2); tCtx.fillRect(0, size-2, size, 2);
+            tCtx.fillRect(0, 0, 2, size); tCtx.fillRect(size-2, 0, 2, size);
+            const topTex = new THREE.CanvasTexture(topCanvas);
+            topTex.magFilter = THREE.NearestFilter; topTex.minFilter = THREE.NearestFilter;
+            const sideMat = new THREE.MeshLambertMaterial({ map: sideTex });
+            const topMat = new THREE.MeshLambertMaterial({ map: topTex });
+            return [sideMat, sideMat, topMat, topMat, sideMat, sideMat];
+        }
+        function createCowMaterial() {
+            const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#4a3018'; ctx.fillRect(0, 0, 64, 64);
+            ctx.fillStyle = '#fff';
+            for (let i = 0; i < 8; i++) {
+                ctx.fillRect(Math.random() * 64, Math.random() * 64, Math.random() * 20 + 10, Math.random() * 20 + 10);
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+            return new THREE.MeshLambertMaterial({ map: tex });
+        }
+        function createPixelTexture(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 16; canvas.height = 16;
+            const ctx = canvas.getContext('2d');
+            if (type.name === 'ガラス') {
+                ctx.clearRect(0, 0, 16, 16);
+                ctx.fillStyle = 'rgba(200, 230, 255, 0.2)'; ctx.fillRect(0, 0, 16, 16);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; ctx.fillRect(1, 1, 4, 1); ctx.fillRect(1, 2, 1, 3);
+            } else if (type.isWater) {
+                ctx.fillStyle = type.color; ctx.fillRect(0, 0, 16, 16);
+                for (let i = 0; i < 20; i++) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+                    ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+                }
+            } else {
+                ctx.fillStyle = type.color; ctx.fillRect(0, 0, 16, 16);
+                if (type.name === '本棚') {
+                    // マインクラフトの本棚を意識し、上下は木の板のフチ、中央に本の背表紙が並ぶ見た目にする
+                    ctx.fillStyle = '#7a5230'; ctx.fillRect(0, 0, 16, 16);
+                    ctx.fillStyle = '#9c6b3f'; ctx.fillRect(0, 0, 16, 2); ctx.fillRect(0, 14, 16, 2);
+                    const bookColors = ['#b23a2e', '#2e6db2', '#3a8f3a', '#c9a227', '#7a3a9c', '#1f7a7a', '#c9622a', '#8f1f3a'];
+                    for (let col = 0; col < 8; col++) {
+                        const bx = col * 2;
+                        ctx.fillStyle = bookColors[col % bookColors.length];
+                        ctx.fillRect(bx, 2, 2, 12);
+                        ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(bx, 2, 2, 1);
+                    }
+                    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 8, 16, 1);
+                } else if (type.name === '作業台') {
+                    ctx.fillStyle = '#553311'; ctx.fillRect(2,2,4,4); ctx.fillRect(10,2,4,4);
+                } else if (type.subtype === 'carpet') {
+                    // 織り目のような質感を出すため、2x2ピクセル単位で明暗を交互にした市松模様を重ねる
+                    for (let cy = 0; cy < 16; cy += 2) {
+                        for (let cx = 0; cx < 16; cx += 2) {
+                            const isDark = ((cx / 2) + (cy / 2)) % 2 === 0;
+                            ctx.fillStyle = isDark ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.12)';
+                            ctx.fillRect(cx, cy, 2, 2);
+                        }
+                    }
+                    // 四辺に房(フリンジ)のような点々の縁取りを追加
+                    ctx.fillStyle = 'rgba(0,0,0,0.18)';
+                    for (let i = 0; i < 16; i += 2) {
+                        ctx.fillRect(i, 0, 1, 1); ctx.fillRect(i, 15, 1, 1);
+                        ctx.fillRect(0, i, 1, 1); ctx.fillRect(15, i, 1, 1);
+                    }
+                }
+                if (type.name !== '本棚' && type.name !== '作業台' && type.subtype !== 'carpet') {
+                    for (let i = 0; i < 40; i++) {
+                        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
+                        ctx.fillRect(Math.floor(Math.random() * 16), Math.floor(Math.random() * 16), 1, 1);
+                    }
+                }
+            }
+            if (!type.isWater) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+                ctx.fillRect(0, 0, 16, 1); ctx.fillRect(0, 15, 16, 1);
+                ctx.fillRect(0, 0, 1, 16); ctx.fillRect(15, 0, 1, 16);
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+            if (type.isWater) { tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; }
+            return tex;
+        }
+        const INVENTORY_DATA = {
+            minerals: [
+                { id: 1, name: '草ブロック', type: 'basic', color: '#55aa55' },
+                { id: 2, name: '土', type: 'basic', color: '#8b5a2b' },
+                { id: 3, name: '石', type: 'basic', color: '#888888' },
+                { id: 4, name: '木材', type: 'basic', color: '#cdaa7d' },
+                { id: 5, name: 'ガラス', type: 'basic', color: '#add8e6', transparent: true },
+                { id: 6, name: 'レンガ', type: 'basic', color: '#b22222' },
+                { id: 7, name: '黒曜石', type: 'basic', color: '#221144' },
+                { id: 8, name: '雪', type: 'basic', color: '#ffffff' },
+                { id: 9, name: '金ブロック', type: 'basic', color: '#ffd700' },
+
+                { id: 200, name: 'パステルサクラピンクブロック', type: 'basic', color: '#eb9898' },
+                { id: 201, name: 'パステルコーラルピンクブロック', type: 'basic', color: '#ebad98' },
+                { id: 202, name: 'パステルピーチブロック', type: 'basic', color: '#ebc298' },
+                { id: 203, name: 'パステルアプリコットブロック', type: 'basic', color: '#ebd798' },
+                { id: 204, name: 'パステルレモンイエローブロック', type: 'basic', color: '#ebeb98' },
+                { id: 205, name: 'パステルシャルトリューズブロック', type: 'basic', color: '#d7eb98' },
+                { id: 206, name: 'パステルライムブロック', type: 'basic', color: '#c2eb98' },
+                { id: 207, name: 'パステルミントグリーンブロック', type: 'basic', color: '#adeb98' },
+                { id: 208, name: 'パステルスプリンググリーンブロック', type: 'basic', color: '#98eb98' },
+                { id: 209, name: 'パステルジェイドグリーンブロック', type: 'basic', color: '#98ebad' },
+                { id: 210, name: 'パステルターコイズブロック', type: 'basic', color: '#98ebc2' },
+                { id: 211, name: 'パステルアクアブロック', type: 'basic', color: '#98ebd7' },
+                { id: 212, name: 'パステルスカイブルーブロック', type: 'basic', color: '#98ebeb' },
+                { id: 213, name: 'パステルセルリアンブルーブロック', type: 'basic', color: '#98d7eb' },
+                { id: 214, name: 'パステルコーンフラワーブルーブロック', type: 'basic', color: '#98c2eb' },
+                { id: 215, name: 'パステルペリウィンクルブロック', type: 'basic', color: '#98adeb' },
+                { id: 216, name: 'パステルラベンダーブルーブロック', type: 'basic', color: '#9898eb' },
+                { id: 217, name: 'パステルライラックブロック', type: 'basic', color: '#ad98eb' },
+                { id: 218, name: 'パステルバイオレットブロック', type: 'basic', color: '#c298eb' },
+                { id: 219, name: 'パステルオーキッドブロック', type: 'basic', color: '#d798eb' },
+                { id: 220, name: 'パステルフューシャピンクブロック', type: 'basic', color: '#eb98eb' },
+                { id: 221, name: 'パステルマゼンタローズブロック', type: 'basic', color: '#eb98d7' },
+                { id: 222, name: 'パステルローズピンクブロック', type: 'basic', color: '#eb98c2' },
+                { id: 223, name: 'パステルローズレッドブロック', type: 'basic', color: '#eb98ad' }
+            ],
+            furniture: [
+                { id: 10, name: '赤色のベッド', type: 'furniture', subtype: 'bed', color: '#cc0000' },
+                { id: 11, name: 'ピンクベッド', type: 'furniture', subtype: 'bed', color: '#ff88bb' },
+                { id: 31, name: '白ベット', type: 'furniture', subtype: 'bed', color: '#eeeeee' },
+                { id: 32, name: '水色ベット', type: 'furniture', subtype: 'bed', color: '#55aaff' },
+                { id: 33, name: '黄ベット', type: 'furniture', subtype: 'bed', color: '#ffcc00' },
+                { id: 34, name: '黄緑ベット', type: 'furniture', subtype: 'bed', color: '#88cc22' },
+
+                { id: 12, name: '木のドア', type: 'furniture', subtype: 'door', color: '#8b5a2b' },
+                { id: 13, name: '白いドア', type: 'furniture', subtype: 'door', color: '#dddddd' },
+                { id: 50, name: 'ピンクのドア', type: 'furniture', subtype: 'door', color: '#ff88bb' },
+                { id: 51, name: '水色のドア', type: 'furniture', subtype: 'door', color: '#55aaff' },
+                { id: 52, name: '黄緑色のドア', type: 'furniture', subtype: 'door', color: '#88cc22' },
+                { id: 53, name: '鉄のドア', type: 'furniture', subtype: 'door', color: '#aaaaaa' },
+                { id: 15, name: '木チェスト', type: 'furniture', subtype: 'chest', color: '#a0522d' },
+                { id: 54, name: '白チェスト', type: 'furniture', subtype: 'chest', color: '#eeeeee' },
+                { id: 55, name: '水色チェスト', type: 'furniture', subtype: 'chest', color: '#55aaff' },
+                { id: 56, name: '黄色チェスト', type: 'furniture', subtype: 'chest', color: '#ffcc00' },
+                { id: 57, name: '黄緑チェスト', type: 'furniture', subtype: 'chest', color: '#88cc22' },
+                { id: 58, name: 'ピンクチェスト', type: 'furniture', subtype: 'chest', color: '#ff88bb' },
+                { id: 14, name: '木のフェンス', type: 'furniture', subtype: 'fence', color: '#8b5a2b' },
+                { id: 230, name: 'ピンクのフェンス', type: 'furniture', subtype: 'fence', color: '#ff88bb' },
+                { id: 231, name: '水色フェンス', type: 'furniture', subtype: 'fence', color: '#55aaff' },
+                { id: 232, name: '黄色のフェンス', type: 'furniture', subtype: 'fence', color: '#ffcc00' },
+                { id: 233, name: '黄緑のフェンス', type: 'furniture', subtype: 'fence', color: '#88cc22' },
+                { id: 234, name: '白のフェンス', type: 'furniture', subtype: 'fence', color: '#eeeeee' },
+                { id: 16, name: '本棚', type: 'basic', color: '#deb887' },
+                { id: 17, name: 'かまど', type: 'furniture', subtype: 'furnace', color: '#777777' },
+                { id: 18, name: '赤いカーペット', type: 'furniture', subtype: 'carpet', color: '#cc0000' },
+                { id: 19, name: '青いカーペット', type: 'furniture', subtype: 'carpet', color: '#0000cc' },
+                { id: 235, name: '白いカーペット', type: 'furniture', subtype: 'carpet', color: '#eeeeee' },
+                { id: 236, name: '黒いカーペット', type: 'furniture', subtype: 'carpet', color: '#222222' },
+                { id: 237, name: '灰色のカーペット', type: 'furniture', subtype: 'carpet', color: '#888888' },
+                { id: 238, name: 'ピンクのカーペット', type: 'furniture', subtype: 'carpet', color: '#ff88bb' },
+                { id: 239, name: '黄色のカーペット', type: 'furniture', subtype: 'carpet', color: '#ffcc00' },
+                { id: 240, name: '黄緑のカーペット', type: 'furniture', subtype: 'carpet', color: '#88cc22' },
+                { id: 241, name: '水色のカーペット', type: 'furniture', subtype: 'carpet', color: '#55aaff' },
+                { id: 242, name: 'オレンジのカーペット', type: 'furniture', subtype: 'carpet', color: '#ff8800' },
+                { id: 243, name: '紫のカーペット', type: 'furniture', subtype: 'carpet', color: '#9955cc' },
+                { id: 244, name: '茶色のカーペット', type: 'furniture', subtype: 'carpet', color: '#8b5a2b' },
+                { id: 20, name: 'ろうそく(白)', type: 'furniture', subtype: 'candle', color: '#ffffff' },
+                { id: 21, name: '木のトラップドア', type: 'furniture', subtype: 'trapdoor', color: '#8b5a2b' },
+                { id: 22, name: 'ランタン', type: 'furniture', subtype: 'lantern', color: '#ffaa00' },
+                { id: 245, name: '花鉢(赤い花)', type: 'furniture', subtype: 'potted_flower', color: '#ff4466' },
+                { id: 246, name: '花鉢(黄色い花)', type: 'furniture', subtype: 'potted_flower', color: '#ffd23f' },
+                { id: 247, name: 'ヤシの木の植木', type: 'furniture', subtype: 'potted_palm', color: '#2f8f3f' },
+                { id: 248, name: 'バナナの植木', type: 'furniture', subtype: 'potted_banana', color: '#3fae3f' },
+                { id: 249, name: 'サボテンの植木', type: 'furniture', subtype: 'potted_cactus', color: '#2f8f4f' },
+
+                { id: 40, name: '木の階段ブロック', type: 'furniture', subtype: 'stairs', color: '#cdaa7d' },
+                { id: 41, name: '白い階段ブロック', type: 'furniture', subtype: 'stairs', color: '#dddddd' },
+                { id: 42, name: 'ピンクの階段ブロック', type: 'furniture', subtype: 'stairs', color: '#ff88bb' },
+                { id: 43, name: '水色の階段ブロック', type: 'furniture', subtype: 'stairs', color: '#55aaff' },
+                { id: 44, name: '黄緑の階段ブロック', type: 'furniture', subtype: 'stairs', color: '#88cc22' },
+                { id: 45, name: '石の階段ブロック', type: 'furniture', subtype: 'stairs', color: '#888888' }
+            ],
+            others: [
+                { id: 30, name: '作業台', type: 'basic', color: '#8b5a2b' },
+                { id: 99, name: '水バケツ', type: 'bucket', isWater: true, color: '#3366ff' },
+                { id: 101, name: 'レール', type: 'furniture', subtype: 'rail', color: '#aaaaaa' },
+                { id: 102, name: '木の葉', type: 'basic', color: '#3f8f3f' },
+                { id: 103, name: 'トロッコ', type: 'cart', color: '#5a4632' }
+            ],
+            animals: [
+                { id: 100, name: '牛', type: 'animal', subtype: 'cow', color: '#4a3018' },
+                { id: 104, name: '羊', type: 'animal', subtype: 'sheep', color: '#f2f2f2' },
+                { id: 105, name: 'ピンクの羊', type: 'animal', subtype: 'sheep', color: '#ff88bb' },
+                { id: 106, name: '黄色の羊', type: 'animal', subtype: 'sheep', color: '#ffcc00' },
+                { id: 107, name: '水色の羊', type: 'animal', subtype: 'sheep', color: '#55aaff' },
+                { id: 108, name: '猫', type: 'animal', subtype: 'cat', color: '#e8a852' },
+                { id: 109, name: '犬', type: 'animal', subtype: 'dog', color: '#c8935a' },
+                { id: 110, name: '熱帯魚(カクレクマノミ)', type: 'fish', subtype: 'clownfish', color: '#ff7f27' }
+            ]
+        };
+        const ALL_BLOCKS_MAP = {};
+        let waterTexture = null;
+        Object.values(INVENTORY_DATA).forEach(category => {
+            category.forEach(item => {
+                item.icon = generateIcon(item.subtype || item.type, item.color, item.name);
+
+                if (item.isWater) {
+                    waterTexture = createPixelTexture(item);
+                    item.map = waterTexture;
+                    item.material = new THREE.MeshLambertMaterial({
+                        map: waterTexture, transparent: true, opacity: 0.6,
+                        polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+                    });
+                } else if (item.type === 'basic') {
+                    item.map = createPixelTexture(item);
+                    item.material = new THREE.MeshLambertMaterial({
+                        map: item.map, transparent: item.transparent, alphaTest: item.transparent ? 0.5 : 0
+                    });
+                }
+                ALL_BLOCKS_MAP[item.id] = item;
+            });
+        });
+        let hotbarItems = new Array(9).fill(null);
+        for (let i = 0; i < 9; i++) {
+            if (INVENTORY_DATA.minerals[i]) hotbarItems[i] = INVENTORY_DATA.minerals[i];
+        }
+
+        let currentSlotIndex = 0;
+        let isInventoryOpen = false;
+        let currentInvTab = 'minerals';
+        let invFocusedIndex = 0;
+        let hotbarInsertIndex = 0;
+        const GRID_COLUMNS = 9;
+        const invOverlay = document.getElementById('inventory-overlay');
+        const invGrid = document.getElementById('inv-grid');
+        const invItemNameBox = document.getElementById('inv-item-name');
+        const hotbarContainer = document.getElementById('hotbar-container');
+        const itemPopup = document.getElementById('item-popup');
+        let popupTimeout;
+        function showPopup(text) {
+            itemPopup.innerText = text; itemPopup.style.opacity = 1;
+            clearTimeout(popupTimeout);
+            popupTimeout = setTimeout(() => { itemPopup.style.opacity = 0; }, 2000);
+        }
+        function initHotbar() {
+            hotbarContainer.innerHTML = '';
+            for (let i = 0; i < 9; i++) {
+                const slot = document.createElement('div');
+                slot.className = `hotbar-slot ${i === currentSlotIndex ? 'active' : ''}`;
+                slot.innerHTML = `<span class="slot-number">${i + 1}</span>`;
+
+                const item = hotbarItems[i];
+                if (item) {
+                    const preview = document.createElement('img');
+                    preview.className = 'block-preview'; preview.src = item.icon;
+                    slot.appendChild(preview);
+                }
+
+                const selectThisSlot = () => {
+                    if (!isInventoryOpen) { currentSlotIndex = i; updateHotbarSelection(); }
+                };
+                slot.addEventListener('click', selectThisSlot);
+                // iPad等でホットバーをタップすると、指を離した後にブラウザが合成のmousedown/clickを
+                // 発生させ、それが画面中央(照準)のブロック破壊処理を呼んでしまう不具合があった。
+                // タッチ専用のハンドラをここで直接処理してpreventDefault()し、
+                // 合成イベントの発生自体を止めることで解決する(選択自体は同じselectThisSlotを使う)。
+                slot.addEventListener('touchstart', (event) => {
+                    event.stopPropagation(); event.preventDefault();
+                    selectThisSlot();
+                }, { passive: false });
+                hotbarContainer.appendChild(slot);
+            }
+        }
+        function updateHotbarSelection() {
+            const slots = document.querySelectorAll('.hotbar-slot');
+            slots.forEach((slot, index) => {
+                if (index === currentSlotIndex) slot.classList.add('active');
+                else slot.classList.remove('active');
+            });
+            const item = hotbarItems[currentSlotIndex];
+            if (item) showPopup(item.name);
+        }
+        function toggleInventory() {
+            isInventoryOpen = !isInventoryOpen;
+            if (isInventoryOpen) {
+                invOverlay.style.display = 'flex';
+                document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+                if (document.exitPointerLock) document.exitPointerLock();
+                isLocked = false; invFocusedIndex = 0;
+                renderInventoryGrid();
+            } else {
+                invOverlay.style.display = 'none'; lockPointer();
+            }
+        }
+        function renderInventoryGrid() {
+            const items = INVENTORY_DATA[currentInvTab];
+            invGrid.innerHTML = '';
+
+            document.querySelectorAll('.inv-tab').forEach(tab => {
+                if (tab.dataset.tab === currentInvTab) tab.classList.add('active');
+                else tab.classList.remove('active');
+            });
+            items.forEach((item, index) => {
+                const slot = document.createElement('div');
+                slot.className = 'inv-slot';
+                const preview = document.createElement('img');
+                preview.className = 'block-preview'; preview.src = item.icon;
+                slot.appendChild(preview);
+                slot.addEventListener('mouseenter', () => { invFocusedIndex = index; updateInventoryFocus(); });
+                slot.addEventListener('click', () => { addItemToHotbar(item); });
+                invGrid.appendChild(slot);
+            });
+            updateInventoryFocus();
+        }
+        function updateInventoryFocus() {
+            const slots = document.querySelectorAll('.inv-slot');
+            slots.forEach((slot, i) => {
+                if (i === invFocusedIndex) slot.classList.add('focused');
+                else slot.classList.remove('focused');
+            });
+            const item = INVENTORY_DATA[currentInvTab][invFocusedIndex];
+            invItemNameBox.innerText = item ? item.name : '';
+        }
+        function addItemToHotbar(item) {
+            if (!item) return;
+            hotbarItems[hotbarInsertIndex] = item;
+            currentSlotIndex = hotbarInsertIndex;
+            hotbarInsertIndex = (hotbarInsertIndex + 1) % 9;
+            initHotbar(); updateHotbarSelection();
+            showPopup(`${item.name} をホットバーに追加しました`);
+        }
+        document.querySelectorAll('.inv-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                currentInvTab = e.target.dataset.tab; invFocusedIndex = 0; renderInventoryGrid();
+            });
+        });
+        const invCloseBtn = document.getElementById('inv-close-btn');
+        if (invCloseBtn) {
+            invCloseBtn.addEventListener('click', () => {
+                if (isInventoryOpen) toggleInventory();
+            });
+        }
+        const activeBlocks = {};
+        const blockMeshes = [];
+        let animals = [];
+        let minecarts = [];
+        let fishes = [];
+        let currentRidingCart = null;
+        const CHUNK_SIZE = 16;
+        // 非インスタンス描画(ブロック1個=メッシュ1個)のため、描画距離とチャンクの深さは
+        // メッシュ総数(≒描画コール数)が大きくなりすぎないよう控えめに設定している。
+        const RENDER_DISTANCE = 2;
+
+        // --- 地形生成用ノイズ(簡易2D Perlinノイズ。外部ライブラリなしの自前実装) ---
+        function createPerlinNoise2D(seed) {
+            const perm = new Uint8Array(512);
+            const p = new Uint8Array(256);
+            for (let i = 0; i < 256; i++) p[i] = i;
+            let s = seed % 2147483647; if (s <= 0) s += 2147483646;
+            function rand() { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }
+            for (let i = 255; i > 0; i--) {
+                const j = Math.floor(rand() * (i + 1));
+                const tmp = p[i]; p[i] = p[j]; p[j] = tmp;
+            }
+            for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+            function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+            function lerp(t, a, b) { return a + t * (b - a); }
+            function grad(hash, x, y) {
+                const h = hash & 7;
+                const u = h < 4 ? x : y;
+                const v = h < 4 ? y : x;
+                return ((h & 1) ? -u : u) + ((h & 2) ? -2 * v : 2 * v);
+            }
+            return function noise(x, y) {
+                const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+                x -= Math.floor(x); y -= Math.floor(y);
+                const u = fade(x), v = fade(y);
+                const aa = perm[perm[X] + Y], ab = perm[perm[X] + Y + 1];
+                const ba = perm[perm[X + 1] + Y], bb = perm[perm[X + 1] + Y + 1];
+                return lerp(v,
+                    lerp(u, grad(aa, x, y), grad(ba, x - 1, y)),
+                    lerp(u, grad(ab, x, y - 1), grad(bb, x - 1, y - 1))
+                );
+            };
+        }
+        const terrainNoise = createPerlinNoise2D(20260826); // 現在は未使用(フラットワールドのため)。丘陵地形に戻す場合はgetTerrainHeightで利用する
+        const FLAT_WORLD_HEIGHT = 5;
+        function getTerrainHeight(worldX, worldZ) {
+            // フラットワールド: 常に一定の高さを返す
+            return FLAT_WORLD_HEIGHT;
+        }
+        function tryPlaceTree(x, yBase, z) {
+            const trunkHeight = 3 + Math.floor(Math.random() * 2); // 3〜4
+            for (let i = 0; i < trunkHeight; i++) addBlockMesh(x, yBase + i, z, ALL_BLOCKS_MAP[4]);
+            const leafY = yBase + trunkHeight - 1;
+            for (let dy = 0; dy <= 1; dy++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        if (dx === 0 && dz === 0 && dy === 0) continue;
+                        addBlockMesh(x + dx, leafY + dy, z + dz, ALL_BLOCKS_MAP[102]);
+                    }
+                }
+            }
+            addBlockMesh(x, leafY + 2, z, ALL_BLOCKS_MAP[102]);
+        }
+        // --- チャンクの動的生成(プレイヤーの周囲だけを少しずつ生成し、無限に広がる地形にする) ---
+        const loadedChunks = new Set();
+        const pendingChunkKeys = new Set();
+        const chunkGenQueue = [];
+        const TERRAIN_DEPTH = { dirt: 2, stone: 1 }; // grass(1) + dirt + stone の合計層数
+        function generateChunk(cx, cz) {
+            for (let x = 0; x < CHUNK_SIZE; x++) {
+                for (let z = 0; z < CHUNK_SIZE; z++) {
+                    const worldX = cx * CHUNK_SIZE + x;
+                    const worldZ = cz * CHUNK_SIZE + z;
+                    const height = getTerrainHeight(worldX, worldZ);
+                    addBlockMesh(worldX, height, worldZ, ALL_BLOCKS_MAP[1]); // 草
+                    for (let d = 1; d <= TERRAIN_DEPTH.dirt; d++) addBlockMesh(worldX, height - d, worldZ, ALL_BLOCKS_MAP[2]); // 土
+                    for (let d = 1; d <= TERRAIN_DEPTH.stone; d++) addBlockMesh(worldX, height - TERRAIN_DEPTH.dirt - d, worldZ, ALL_BLOCKS_MAP[3]); // 石
+                    // 木は生成しない(フラットで何もない地形にするため無効化。tryPlaceTree自体は残してあるので、
+                    // 必要になれば再度呼び出すだけで木の生成を復活できる)
+                }
+            }
+            loadedChunks.add(`${cx},${cz}`);
+        }
+        function requestChunksAroundPlayer() {
+            const pcx = Math.floor(playerGroup.position.x / CHUNK_SIZE);
+            const pcz = Math.floor(playerGroup.position.z / CHUNK_SIZE);
+            for (let dx = -RENDER_DISTANCE; dx <= RENDER_DISTANCE; dx++) {
+                for (let dz = -RENDER_DISTANCE; dz <= RENDER_DISTANCE; dz++) {
+                    const cx = pcx + dx, cz = pcz + dz;
+                    const key = `${cx},${cz}`;
+                    if (!loadedChunks.has(key) && !pendingChunkKeys.has(key)) {
+                        pendingChunkKeys.add(key);
+                        chunkGenQueue.push({ cx, cz });
+                    }
+                }
+            }
+        }
+        let lastChunkX = null, lastChunkZ = null;
+        const container = document.getElementById('game-canvas');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, 20, 60);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+        const ambientLight = new THREE.AmbientLight(0xcccccc, 0.6); scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.6); dirLight.position.set(10, 20, 10); scene.add(dirLight);
+        let isLocked = false;
+        let cameraYaw = 0; let cameraPitch = 0;
+        // スマホ・iPadなどタッチデバイスかどうか(PC操作には一切影響しない判定用フラグ)
+        // Chromebook(クロームブック)はタッチスクリーン搭載機でも判定が漏れる場合があるため、
+        // User-Agentの"CrOS"表記も合わせて判定し、タッチ操作・画面ボタンを確実に使えるようにする
+        const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || /CrOS/i.test(navigator.userAgent || '');
+        function lockPointer() {
+            if (!isInventoryOpen) {
+                if (isTouchDevice) {
+                    // タッチデバイスではPointer Lock APIが使えない/不安定なため、
+                    // 実際のポインタロックを要求せず、直接ロック状態にしてブロッカーを隠すだけにする
+                    isLocked = true;
+                    const blockerEl = document.getElementById('blocker');
+                    if (blockerEl) blockerEl.style.display = 'none';
+                    return;
+                }
+                if (document.pointerLockElement !== container && document.mozPointerLockElement !== container) {
+                    const requestFunc = container.requestPointerLock || container.mozRequestPointerLock;
+                    if (requestFunc) requestFunc.call(container).catch(err => {});
+                }
+            }
+        }
+        document.addEventListener('pointerlockchange', () => {
+            isLocked = (document.pointerLockElement === container || document.mozPointerLockElement === container);
+            const blocker = document.getElementById('blocker');
+            if (isLocked) blocker.style.display = 'none';
+            else if (!isInventoryOpen && !isCartPromptOpen && !isRespawnPromptOpen) blocker.style.display = 'flex';
+        }, false);
+        document.addEventListener('mousemove', (event) => {
+            if (!isLocked) return;
+            const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+            const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+            const pointerSpeed = 0.002;
+            cameraYaw -= movementX * pointerSpeed;
+            cameraPitch -= movementY * pointerSpeed;
+            const maxPitch = Math.PI / 3;
+            cameraPitch = Math.max(-maxPitch, Math.min(maxPitch, cameraPitch));
+        }, false);
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        const SPAWN_X = 0, SPAWN_Z = 0; // リスポーン(と初期スポーン)の基準となる水平座標
+        const playerGroup = new THREE.Group(); playerGroup.position.set(0, 10, 0); scene.add(playerGroup);
+        const yawGroup = new THREE.Group(); playerGroup.add(yawGroup);
+        const pitchGroup = new THREE.Group(); pitchGroup.position.set(0, 1.6, 0); yawGroup.add(pitchGroup);
+        pitchGroup.add(camera);
+        const avatarGroup = new THREE.Group(); yawGroup.add(avatarGroup);
+        const skinMat = new THREE.MeshLambertMaterial({ color: 0xffe0bd });
+        const shirtMat = new THREE.MeshLambertMaterial({ color: 0x0088ff });
+        const pantsMat = new THREE.MeshLambertMaterial({ color: 0x223388 });
+
+        const headGroup = new THREE.Group(); headGroup.position.set(0, 1.6, 0); avatarGroup.add(headGroup);
+        const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), skinMat); headMesh.position.set(0, 0.3, 0); headGroup.add(headMesh);
+        const bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.3), shirtMat); bodyMesh.position.set(0, 1.05, 0); avatarGroup.add(bodyMesh);
+
+        const rightArmPivot = new THREE.Group(); rightArmPivot.position.set(0.45, 1.4, 0);
+        const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skinMat); rightArm.position.set(0, -0.35, 0);
+        rightArmPivot.add(rightArm); avatarGroup.add(rightArmPivot);
+
+        const leftArmPivot = new THREE.Group(); leftArmPivot.position.set(-0.45, 1.4, 0);
+        const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), skinMat); leftArm.position.set(0, -0.35, 0);
+        leftArmPivot.add(leftArm); avatarGroup.add(leftArmPivot);
+
+        const rightLegPivot = new THREE.Group(); rightLegPivot.position.set(0.15, 0.7, 0);
+        const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.7, 0.25), pantsMat); rightLeg.position.set(0, -0.35, 0);
+        rightLegPivot.add(rightLeg); avatarGroup.add(rightLegPivot);
+
+        const leftLegPivot = new THREE.Group(); leftLegPivot.position.set(-0.15, 0.7, 0);
+        const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.7, 0.25), pantsMat); leftLeg.position.set(0, -0.35, 0);
+        leftLegPivot.add(leftLeg); avatarGroup.add(leftLegPivot);
+        const toolPivot = new THREE.Group(); toolPivot.position.set(0, -0.35, -0.1); rightArmPivot.add(toolPivot);
+        const fpToolPivot = new THREE.Group(); fpToolPivot.position.set(0.5, -0.5, -0.8); pitchGroup.add(fpToolPivot);
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6), new THREE.MeshLambertMaterial({ color: 0x8b5a2b })); handle.rotation.x = Math.PI / 2;
+        const hammerHead = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.2, 0.3), new THREE.MeshLambertMaterial({ color: 0x666666 })); hammerHead.position.z = -0.3;
+        const tpTool = new THREE.Group(); tpTool.add(handle.clone(), hammerHead.clone()); toolPivot.add(tpTool);
+        const fpTool = new THREE.Group(); fpTool.add(handle.clone(), hammerHead.clone()); fpToolPivot.add(fpTool);
+        let isThirdPerson = false;
+        function updateCameraView() {
+            if (isThirdPerson) { camera.position.set(0, 1.0, 4.0); avatarGroup.visible = true; fpToolPivot.visible = false; }
+            else { camera.position.set(0, 0, 0); avatarGroup.visible = false; fpToolPivot.visible = true; }
+        }
+        updateCameraView();
+        const blocker = document.getElementById('blocker');
+        // iPad・スマホでプレイを開始する瞬間に、ブラウザのアドレスバー等を隠した
+        // 最大化(フルスクリーン)表示になるようにする。PC(タッチデバイスでない場合)は何もしない。
+        // 対応していない端末(iPhoneのSafari等)では何も起きないだけで、エラーにはならない。
+        function requestFullscreenIfTouch() {
+            if (!isTouchDevice) return;
+            if (document.fullscreenElement || document.webkitFullscreenElement) return;
+            const el = document.documentElement;
+            const reqFs = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+            if (!reqFs) return;
+            try {
+                const result = reqFs.call(el);
+                if (result && typeof result.catch === 'function') result.catch(() => {});
+            } catch (e) {}
+        }
+        blocker.addEventListener('click', () => { requestFullscreenIfTouch(); lockPointer(); });
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let canJump = false, isFlying = false, moveUp = false, moveDown = false;
+        let lastSpacePress = 0; const velocity = new THREE.Vector3(); const direction = new THREE.Vector3();
+        let isInWater = false;
+        document.addEventListener('keydown', (event) => {
+            if (isCartPromptOpen) return;
+            if (isRespawnPromptOpen) return;
+            if (isInventoryOpen) {
+                const items = INVENTORY_DATA[currentInvTab];
+                if (event.code === 'KeyE') { toggleInventory(); return; }
+                if (event.code === 'ArrowRight') { invFocusedIndex = Math.min(items.length - 1, invFocusedIndex + 1); updateInventoryFocus(); event.preventDefault(); }
+                if (event.code === 'ArrowLeft') { invFocusedIndex = Math.max(0, invFocusedIndex - 1); updateInventoryFocus(); event.preventDefault(); }
+                if (event.code === 'ArrowDown') { invFocusedIndex = Math.min(items.length - 1, invFocusedIndex + GRID_COLUMNS); updateInventoryFocus(); event.preventDefault(); }
+                if (event.code === 'ArrowUp') { invFocusedIndex = Math.max(0, invFocusedIndex - GRID_COLUMNS); updateInventoryFocus(); event.preventDefault(); }
+                if (event.code === 'Enter' || event.code === 'Space') { addItemToHotbar(items[invFocusedIndex]); event.preventDefault(); }
+                return;
+            }
+            switch (event.code) {
+                case 'KeyW': moveForward = true; break; case 'KeyA': moveLeft = true; break;
+                case 'KeyS': moveBackward = true; break; case 'KeyD': moveRight = true; break;
+                case 'ShiftLeft': case 'ShiftRight': moveDown = true; break;
+                case 'Space':
+                    if (currentRidingCart) { if (!event.repeat) exitMinecart(); break; }
+                    moveUp = true; if (event.repeat) break;
+                    const now = performance.now();
+                    if (now - lastSpacePress < 500) { isFlying = !isFlying; if (isFlying) velocity.y = 0; lastSpacePress = 0; }
+                    else { lastSpacePress = now; if (canJump && !isFlying) { velocity.y += 10; canJump = false; } }
+                    break;
+                case 'KeyV': isThirdPerson = !isThirdPerson; updateCameraView(); break;
+                case 'KeyE': toggleInventory(); break;
+                case 'KeyQ': showRespawnPrompt(); break;
+                case 'Digit1': case 'Digit2': case 'Digit3': case 'Digit4': case 'Digit5':
+                case 'Digit6': case 'Digit7': case 'Digit8': case 'Digit9':
+                    currentSlotIndex = parseInt(event.key) - 1; updateHotbarSelection(); break;
+            }
+        });
+        document.addEventListener('keyup', (event) => {
+            if (isInventoryOpen) return;
+            switch (event.code) {
+                case 'KeyW': moveForward = false; break; case 'KeyA': moveLeft = false; break;
+                case 'KeyS': moveBackward = false; break; case 'KeyD': moveRight = false; break;
+                case 'Space': moveUp = false; break; case 'ShiftLeft': case 'ShiftRight': moveDown = false; break;
+            }
+        });
+        document.addEventListener('wheel', (event) => {
+            if (!isLocked) return;
+            if (event.deltaY > 0) currentSlotIndex = (currentSlotIndex + 1) % 9;
+            else currentSlotIndex = (currentSlotIndex - 1 + 9) % 9;
+            updateHotbarSelection();
+        });
+        // ==================== モバイル(スマホ・iPad)操作 ====================
+        // 既存のPC用の変数(moveForward等/cameraYaw・cameraPitch)や関数(lockPointer/
+        // toggleInventory/showRespawnPrompt/exitMinecart/handlePointerAction)をそのまま
+        // 流用してタッチ操作から動かすことで、PC用キーボード・マウス操作のロジックには一切手を加えない。
+        if (isTouchDevice) {
+            document.body.classList.add('touch-device');
+            const mobileControlsEl = document.getElementById('mobile-controls');
+            if (mobileControlsEl) mobileControlsEl.style.display = 'block';
+            document.querySelectorAll('.blocker-pc-hint').forEach(el => { el.style.display = 'none'; });
+            const startHint = document.getElementById('blocker-start-hint');
+            if (startHint) startHint.textContent = '画面をタップしてプレイ開始';
+            const touchHint = document.getElementById('blocker-touch-hint');
+            if (touchHint) touchHint.style.display = 'block';
+            const controlsPanel = document.getElementById('controls-panel');
+            if (controlsPanel) controlsPanel.style.display = 'none';
+            // 一部のモバイルブラウザ向けの保険: clickが発火しない場合でも確実に開始できるようにする
+            blocker.addEventListener('touchend', (event) => { event.preventDefault(); requestFullscreenIfTouch(); lockPointer(); }, { passive: false });
+        }
+        // --- 仮想ジョイスティック(WASDと同じ moveForward 等の真偽値を動かすだけ) ---
+        const joystickZone = document.getElementById('mobile-joystick-zone');
+        const joystickKnob = document.getElementById('mobile-joystick-knob');
+        let joystickTouchId = null;
+        const JOYSTICK_RADIUS = 55;
+        const JOYSTICK_THRESHOLD = 0.35;
+        function resetJoystick() {
+            moveForward = false; moveBackward = false; moveLeft = false; moveRight = false;
+            if (joystickKnob) joystickKnob.style.transform = 'translate(0px, 0px)';
+        }
+        function updateJoystick(touch) {
+            const rect = joystickZone.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+            let dx = touch.clientX - cx, dy = touch.clientY - cy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > JOYSTICK_RADIUS) { dx = dx / dist * JOYSTICK_RADIUS; dy = dy / dist * JOYSTICK_RADIUS; }
+            if (joystickKnob) joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            const nx = dx / JOYSTICK_RADIUS, ny = dy / JOYSTICK_RADIUS;
+            moveForward = ny < -JOYSTICK_THRESHOLD;
+            moveBackward = ny > JOYSTICK_THRESHOLD;
+            moveLeft = nx < -JOYSTICK_THRESHOLD;
+            moveRight = nx > JOYSTICK_THRESHOLD;
+        }
+        if (joystickZone) {
+            joystickZone.addEventListener('touchstart', (event) => {
+                event.stopPropagation(); event.preventDefault();
+                if (joystickTouchId !== null) return;
+                const touch = event.changedTouches[0];
+                joystickTouchId = touch.identifier;
+                updateJoystick(touch);
+            }, { passive: false });
+            joystickZone.addEventListener('touchmove', (event) => {
+                event.stopPropagation(); event.preventDefault();
+                for (const touch of event.changedTouches) {
+                    if (touch.identifier === joystickTouchId) { updateJoystick(touch); break; }
+                }
+            }, { passive: false });
+            const joystickEnd = (event) => {
+                event.stopPropagation();
+                for (const touch of event.changedTouches) {
+                    if (touch.identifier === joystickTouchId) { joystickTouchId = null; resetJoystick(); break; }
+                }
+            };
+            joystickZone.addEventListener('touchend', joystickEnd, { passive: false });
+            joystickZone.addEventListener('touchcancel', joystickEnd, { passive: false });
+            // クロームブックなど、タッチスクリーンがなくマウス/トラックパッドしかない端末でも
+            // 同じジョイスティックをドラッグ操作できるようにする(タッチ操作のロジックには一切影響しない)
+            let joystickMouseActive = false;
+            joystickZone.addEventListener('mousedown', (event) => {
+                event.stopPropagation(); event.preventDefault();
+                joystickMouseActive = true;
+                updateJoystick(event);
+            });
+            document.addEventListener('mousemove', (event) => {
+                if (!joystickMouseActive) return;
+                updateJoystick(event);
+            });
+            document.addEventListener('mouseup', () => {
+                if (!joystickMouseActive) return;
+                joystickMouseActive = false;
+                resetJoystick();
+            });
+        }
+        // --- 画面を指でドラッグして視点操作(PCのmousemoveと同じ式をタッチ差分で計算) ---
+        // ジョイスティックやボタン上のタッチはそれぞれのハンドラでstopPropagation()しているため、
+        // ここに来るのは「操作UI以外の場所」で始まったタッチのみ
+        let lookTouchId = null; let lastTouchX = 0; let lastTouchY = 0;
+        document.addEventListener('touchstart', (event) => {
+            if (!isLocked) return;
+            if (lookTouchId !== null) return;
+            const touch = event.changedTouches[0];
+            // ホットバー(タップして持ちアイテムを選択する)は従来通り合成クリックに任せるため、
+            // ホットバー上で始まったタッチは視点操作の対象にしない(素通りさせる)
+            if (touch.target && touch.target.closest && touch.target.closest('#hotbar-container')) return;
+            lookTouchId = touch.identifier;
+            lastTouchX = touch.clientX; lastTouchY = touch.clientY;
+            // ここでpreventDefault()しておかないと、タッチ終了後にブラウザが合成のmousedown/clickを
+            // 発生させてしまい、視点操作のためにタップしただけでブロックを破壊してしまう不具合が起きる
+            event.preventDefault();
+        }, { passive: false });
+        document.addEventListener('touchmove', (event) => {
+            if (!isLocked || lookTouchId === null) return;
+            for (const touch of event.changedTouches) {
+                if (touch.identifier === lookTouchId) {
+                    const movementX = touch.clientX - lastTouchX;
+                    const movementY = touch.clientY - lastTouchY;
+                    lastTouchX = touch.clientX; lastTouchY = touch.clientY;
+                    const pointerSpeed = 0.006;
+                    cameraYaw -= movementX * pointerSpeed;
+                    cameraPitch -= movementY * pointerSpeed;
+                    const maxPitch = Math.PI / 3;
+                    cameraPitch = Math.max(-maxPitch, Math.min(maxPitch, cameraPitch));
+                    event.preventDefault();
+                    break;
+                }
+            }
+        }, { passive: false });
+        function releaseLookTouch(event) {
+            for (const touch of event.changedTouches) {
+                if (touch.identifier === lookTouchId) {
+                    lookTouchId = null;
+                    event.preventDefault(); // 合成クリックによる誤破壊を防ぐ
+                    break;
+                }
+            }
+        }
+        document.addEventListener('touchend', releaseLookTouch, { passive: false });
+        document.addEventListener('touchcancel', releaseLookTouch, { passive: false });
+        // --- アクションボタン(ジャンプ/破壊/設置/インベントリ/視点切替/リスポーン) ---
+        function bindMobileButton(id, onDown, onUp) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('touchstart', (event) => {
+                event.stopPropagation(); event.preventDefault();
+                if (onDown) onDown(event);
+            }, { passive: false });
+            const upHandler = (event) => {
+                event.stopPropagation(); event.preventDefault();
+                if (onUp) onUp(event);
+            };
+            el.addEventListener('touchend', upHandler, { passive: false });
+            el.addEventListener('touchcancel', upHandler, { passive: false });
+            // クロームブックなど、タッチではなくマウス/トラックパッドしかない端末でも
+            // 同じボタンをクリックで操作できるようにする(タッチ操作のロジックには一切影響しない)
+            el.addEventListener('mousedown', (event) => {
+                event.stopPropagation(); event.preventDefault();
+                if (onDown) onDown(event);
+            });
+            el.addEventListener('mouseup', (event) => {
+                event.stopPropagation(); event.preventDefault();
+                if (onUp) onUp(event);
+            });
+            el.addEventListener('mouseleave', (event) => {
+                // ボタンを押したままカーソルが外に出た場合も、押しっぱなしにならないよう解除する
+                if (onUp) onUp(event);
+            });
+        }
+        bindMobileButton('mobile-btn-jump', () => {
+            if (currentRidingCart) { exitMinecart(); return; }
+            moveUp = true;
+            // PCの[Space]連打と全く同じロジック(lastSpacePress/isFlying)を流用し、
+            // 2回連続タップで浮遊状態のON/OFFを切り替える(ONの間は押している間だけ上昇する)
+            const now = performance.now();
+            if (now - lastSpacePress < 500) { isFlying = !isFlying; if (isFlying) velocity.y = 0; lastSpacePress = 0; }
+            else { lastSpacePress = now; if (canJump && !isFlying) { velocity.y += 10; canJump = false; } }
+        }, () => { moveUp = false; });
+        bindMobileButton('mobile-btn-break', () => { handlePointerAction({ button: 0 }); });
+        bindMobileButton('mobile-btn-place', () => { handlePointerAction({ button: 2 }); });
+        bindMobileButton('mobile-btn-inventory', () => { toggleInventory(); });
+        bindMobileButton('mobile-btn-view', () => { isThirdPerson = !isThirdPerson; updateCameraView(); });
+        bindMobileButton('mobile-btn-respawn', () => { showRespawnPrompt(); });
+        const boxGeometry = new THREE.BoxGeometry(1, 1, 1);
+        const invisibleHitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+        function updateRailOrientation(x, y, z) {
+            const mesh = activeBlocks[`${x},${y},${z}`];
+            if (!mesh || mesh.userData.blockId !== 101) return;
+
+            const isRail = (nx, ny, nz) => {
+                const m = activeBlocks[`${nx},${ny},${nz}`];
+                return m && m.userData.blockId === 101;
+            };
+
+            // X+ is East, X- is West, Z+ is South, Z- is North
+            const hasE = isRail(x+1, y, z);
+            const hasW = isRail(x-1, y, z);
+            const hasS = isRail(x, y, z+1);
+            const hasN = isRail(x, y, z-1);
+
+            let showSZ = false, showSX = false;
+            let showCNW = false, showCNE = false, showCSW = false, showCSE = false;
+
+            const count = [hasN, hasS, hasE, hasW].filter(Boolean).length;
+
+            if (count === 0) {
+                showSZ = true;
+            } else if (count === 1) {
+                if (hasN || hasS) showSZ = true;
+                if (hasE || hasW) showSX = true;
+            } else if (count === 2) {
+                if (hasN && hasS) showSZ = true;
+                else if (hasE && hasW) showSX = true;
+                else if (hasN && hasW) showCNW = true;
+                else if (hasN && hasE) showCNE = true;
+                else if (hasS && hasW) showCSW = true;
+                else if (hasS && hasE) showCSE = true;
+            } else {
+                // T-Junctions (3) and Crossings (4). Draw lines to available adjacent neighbors
+                if (hasN && hasS) showSZ = true;
+                if (hasE && hasW) showSX = true;
+                if (hasN && hasW) showCNW = true;
+                if (hasN && hasE) showCNE = true;
+                if (hasS && hasW) showCSW = true;
+                if (hasS && hasE) showCSE = true;
+            }
+            if (mesh.userData.parts) {
+                mesh.userData.parts.sz.visible = showSZ;
+                mesh.userData.parts.sx.visible = showSX;
+                mesh.userData.parts.cnw.visible = showCNW;
+                mesh.userData.parts.cne.visible = showCNE;
+                mesh.userData.parts.csw.visible = showCSW;
+                mesh.userData.parts.cse.visible = showCSE;
+            }
+            mesh.rotation.y = 0;
+            mesh.rotation.x = 0;
+            mesh.rotation.z = 0;
+            // 同じ高さに繋がる隣接レールが無い場合だけ、1段上/下にあるレールへ向けて斜めに傾ける。
+            // これにより、高さの違う2つの足場をレール1本で斜めに立てかけて繋げられるようにする。
+            // (同じ高さの隣接がある通常の直線・カーブ・交差の見た目にはまったく影響しない)
+            if (count === 0 && mesh.userData.parts) {
+                const TILT_ANGLE = Math.PI / 5.5; // 約33度
+                const diagDirs = [
+                    { dx: 0, dz: -1, axis: 'x', coeff: 1 },  // 北
+                    { dx: 0, dz: 1, axis: 'x', coeff: -1 },  // 南
+                    { dx: -1, dz: 0, axis: 'z', coeff: -1 }, // 西
+                    { dx: 1, dz: 0, axis: 'z', coeff: 1 }    // 東
+                ];
+                for (const d of diagDirs) {
+                    let heightSign = 0;
+                    if (isRail(x + d.dx, y + 1, z + d.dz)) heightSign = 1;
+                    else if (isRail(x + d.dx, y - 1, z + d.dz)) heightSign = -1;
+                    if (heightSign !== 0) {
+                        if (d.axis === 'x') {
+                            mesh.userData.parts.sz.visible = true;
+                            mesh.userData.parts.sx.visible = false;
+                            mesh.rotation.x = heightSign * d.coeff * TILT_ANGLE;
+                        } else {
+                            mesh.userData.parts.sx.visible = true;
+                            mesh.userData.parts.sz.visible = false;
+                            mesh.rotation.z = heightSign * d.coeff * TILT_ANGLE;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        function updateFenceConnections(x, y, z) {
+            const mesh = activeBlocks[`${x},${y},${z}`];
+            if (!mesh || !mesh.userData.isFence || !mesh.userData.parts) return;
+            Object.values(mesh.userData.parts).forEach(p => {
+                const nMesh = activeBlocks[`${x + p.dx},${y},${z + p.dz}`];
+                // 色違いのフェンス同士も、フェンスであれば(isFence)つながって見えるようにする
+                const connected = !!(nMesh && nMesh.userData && nMesh.userData.isFence);
+                p.upper.visible = connected;
+                p.lower.visible = connected;
+            });
+        }
+        function createFurniture(item, x, y, z, yaw) {
+            const group = new THREE.Group(); group.position.set(x, y, z);
+            group.userData.isFurniture = true; group.userData.mainKey = `${x},${y},${z}`;
+            group.userData.blockId = item.id;
+            let blocksToOccupy = [`${x},${y},${z}`];
+            const mainMat = new THREE.MeshLambertMaterial({ color: item.color || 0xdddddd });
+            if (item.subtype === 'door') {
+                const materials = createDoorMaterial(item.color || '#916a42');
+                const pivotGroup = new THREE.Group(); pivotGroup.position.set(-0.5, -0.5, 0);
+                const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 2.0, 0.15), materials);
+                doorMesh.position.set(0.5, 1.0, 0); pivotGroup.add(doorMesh);
+                group.add(pivotGroup); group.rotation.y = yaw;
+                blocksToOccupy.push(`${x},${y+1},${z}`);
+                group.userData.isDoor = true; group.userData.isOpen = false; group.userData.pivotGroup = pivotGroup; group.userData.baseYaw = yaw;
+                const hitbox1 = new THREE.Mesh(boxGeometry, invisibleHitboxMat); hitbox1.userData.mainKey = `${x},${y},${z}`;
+                const hitbox2 = new THREE.Mesh(boxGeometry, invisibleHitboxMat); hitbox2.position.set(0, 1, 0); hitbox2.userData.mainKey = `${x},${y},${z}`;
+                group.add(hitbox1, hitbox2);
+            }
+            else if (item.subtype === 'bed') {
+                const woodMat = new THREE.MeshLambertMaterial({ color: 0x8b5a2b });
+                const whiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                const legGeo = new THREE.BoxGeometry(0.1875, 0.1875, 0.1875);
+                const l1 = new THREE.Mesh(legGeo, woodMat); l1.position.set(0.40625, -0.40625, 0.40625);
+                const l2 = new THREE.Mesh(legGeo, woodMat); l2.position.set(-0.40625, -0.40625, 0.40625);
+                const l3 = new THREE.Mesh(legGeo, woodMat); l3.position.set(0.40625, -0.40625, -1.40625);
+                const l4 = new THREE.Mesh(legGeo, woodMat); l4.position.set(-0.40625, -0.40625, -1.40625);
+                const frame = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1875, 2), woodMat); frame.position.set(0, -0.21875, -0.5);
+                const blanket = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1875, 1.5), mainMat); blanket.position.set(0, -0.03125, -0.25);
+                const sheet = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1875, 0.5), whiteMat); sheet.position.set(0, -0.03125, -1.25);
+                const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.875, 0.0625, 0.375), whiteMat); pillow.position.set(0, 0.09375, -1.25);
+                group.add(l1, l2, l3, l4, frame, blanket, sheet, pillow); group.rotation.y = yaw;
+                let dz = Math.round(Math.cos(yaw) * -1); let dx = Math.round(Math.sin(yaw) * -1);
+                blocksToOccupy.push(`${x+dx},${y},${z+dz}`);
+                const hitbox1 = new THREE.Mesh(boxGeometry, invisibleHitboxMat); hitbox1.userData.mainKey = `${x},${y},${z}`;
+                const hitbox2 = new THREE.Mesh(boxGeometry, invisibleHitboxMat); hitbox2.position.set(0, 0, -1); hitbox2.userData.mainKey = `${x},${y},${z}`;
+                group.add(hitbox1, hitbox2);
+            }
+            else if (item.subtype === 'fence') {
+                // 隣が柵の場合だけ、その方向にポストからマス目の端まで伸びる横木を出す。
+                // これにより直線・曲がり角(90度)・T字・十字がすべて自動でつながって見える(レールと同じ考え方)。
+                const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1, 0.25), mainMat);
+                group.add(post);
+                const dirsInfo = [
+                    { key: 'e', dx: 1, dz: 0, isZ: false, offX: 0.25, offZ: 0 },
+                    { key: 'w', dx: -1, dz: 0, isZ: false, offX: -0.25, offZ: 0 },
+                    { key: 's', dx: 0, dz: 1, isZ: true, offX: 0, offZ: 0.25 },
+                    { key: 'n', dx: 0, dz: -1, isZ: true, offX: 0, offZ: -0.25 }
+                ];
+                const parts = {};
+                dirsInfo.forEach(info => {
+                    const barGeo = info.isZ ? new THREE.BoxGeometry(0.15, 0.15, 0.5) : new THREE.BoxGeometry(0.5, 0.15, 0.15);
+                    const upper = new THREE.Mesh(barGeo, mainMat); upper.position.set(info.offX, 0.25, info.offZ); upper.visible = false;
+                    const lower = new THREE.Mesh(barGeo, mainMat); lower.position.set(info.offX, -0.25, info.offZ); lower.visible = false;
+                    group.add(upper, lower);
+                    parts[info.key] = { upper, lower, dx: info.dx, dz: info.dz };
+                });
+                group.userData.parts = parts;
+                group.userData.isFence = true;
+                const hitbox = new THREE.Mesh(boxGeometry, invisibleHitboxMat); hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'chest') {
+                const chestGeo = new THREE.BoxGeometry(0.875, 0.875, 0.875);
+                const materials = createChestMaterial(item.color || '#a0522d');
+                const chest = new THREE.Mesh(chestGeo, materials); chest.position.y = -0.0625;
+                const lock = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.05), new THREE.MeshLambertMaterial({color: 0xcccccc})); lock.position.set(0, 0.1, 0.45);
+                group.add(chest, lock); group.rotation.y = yaw;
+                const hitbox = new THREE.Mesh(boxGeometry, invisibleHitboxMat); hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'furnace') {
+                const mesh = new THREE.Mesh(boxGeometry, mainMat);
+                group.add(mesh); group.rotation.y = yaw;
+                const hitbox = new THREE.Mesh(boxGeometry, invisibleHitboxMat); hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'carpet') {
+                // 単色ベタ塗りではなく、織り目模様のテクスチャを貼って質感を出す
+                const carpetTex = createPixelTexture(item);
+                const carpetMat = new THREE.MeshLambertMaterial({ map: carpetTex });
+                const carpet = new THREE.Mesh(new THREE.BoxGeometry(1, 0.0625, 1), carpetMat); carpet.position.y = -0.46875; group.add(carpet);
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1, 0.1, 1), invisibleHitboxMat); hitbox.position.y = -0.45; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'potted_flower') {
+                // 植木鉢(素焼きの鉢) + 茎 + 花(色は選択したブロックの色をそのまま使う)
+                const potMat = new THREE.MeshLambertMaterial({ color: 0xb5651d });
+                const stemMat = new THREE.MeshLambertMaterial({ color: 0x3a8f3a });
+                const flowerMat = new THREE.MeshLambertMaterial({ color: item.color || '#ff4466' });
+                const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.27, 0.22, 8), potMat); pot.position.y = -0.39;
+                const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 6), stemMat); stem.position.y = -0.13;
+                const leaf1 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.06), stemMat); leaf1.position.set(0.1, -0.2, 0); leaf1.rotation.z = 0.4;
+                const leaf2 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.06), stemMat); leaf2.position.set(-0.1, -0.24, 0); leaf2.rotation.z = -0.4;
+                const flower = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 6), flowerMat); flower.position.y = 0.06;
+                group.add(pot, stem, leaf1, leaf2, flower);
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.85, 0.4), invisibleHitboxMat); hitbox.position.y = -0.1; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'potted_palm') {
+                // 植木鉢 + 幹 + 放射状に広がるヤシの葉
+                const potMat = new THREE.MeshLambertMaterial({ color: 0xb5651d });
+                const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8b6b3d });
+                const leafMat = new THREE.MeshLambertMaterial({ color: item.color || '#2f8f3f' });
+                const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.27, 0.22, 8), potMat); pot.position.y = -0.39;
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.55, 6), trunkMat); trunk.position.y = 0.0;
+                group.add(pot, trunk);
+                const frondCount = 6;
+                for (let i = 0; i < frondCount; i++) {
+                    const angle = (i / frondCount) * Math.PI * 2;
+                    const frondPivot = new THREE.Group(); frondPivot.position.set(0, 0.27, 0); frondPivot.rotation.y = angle;
+                    const frond = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.03, 0.42), leafMat);
+                    frond.position.set(0, 0.03, 0.21); frond.rotation.x = -0.35;
+                    frondPivot.add(frond); group.add(frondPivot);
+                }
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.95, 0.5), invisibleHitboxMat); hitbox.position.y = -0.05; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'potted_banana') {
+                // 植木鉢 + 短い茎 + 大きな葉が四方に広がるバナナの木 + 実の房
+                const potMat = new THREE.MeshLambertMaterial({ color: 0xb5651d });
+                const stemMat = new THREE.MeshLambertMaterial({ color: 0x4a7a2a });
+                const leafMat = new THREE.MeshLambertMaterial({ color: item.color || '#3fae3f' });
+                const bananaMat = new THREE.MeshLambertMaterial({ color: 0xf5d020 });
+                const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.27, 0.22, 8), potMat); pot.position.y = -0.39;
+                const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.25, 6), stemMat); stem.position.y = -0.16;
+                group.add(pot, stem);
+                const leafCount = 5;
+                for (let i = 0; i < leafCount; i++) {
+                    const angle = (i / leafCount) * Math.PI * 2;
+                    const leafPivot = new THREE.Group(); leafPivot.position.set(0, -0.02, 0); leafPivot.rotation.y = angle; leafPivot.rotation.z = 0.4;
+                    const leaf = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.38, 0.2), leafMat); leaf.position.y = 0.2;
+                    leafPivot.add(leaf); group.add(leafPivot);
+                }
+                const bananaBunch = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), bananaMat); bananaBunch.position.set(0.08, 0.05, 0.08);
+                group.add(bananaBunch);
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.9, 0.55), invisibleHitboxMat); hitbox.position.y = -0.05; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'potted_cactus') {
+                // 植木鉢 + サボテン本体 + 小さな腕
+                const potMat = new THREE.MeshLambertMaterial({ color: 0xb5651d });
+                const cactusMat = new THREE.MeshLambertMaterial({ color: item.color || '#2f8f4f' });
+                const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.27, 0.22, 8), potMat); pot.position.y = -0.39;
+                const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.5, 8), cactusMat); trunk.position.y = -0.03;
+                const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.2, 8), cactusMat); arm.position.set(0.13, 0.05, 0); arm.rotation.z = Math.PI / 2;
+                const armTop = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.18, 8), cactusMat); armTop.position.set(0.2, 0.13, 0);
+                group.add(pot, trunk, arm, armTop);
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.9, 0.4), invisibleHitboxMat); hitbox.position.y = -0.05; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'candle') {
+                const candleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3);
+                const candle = new THREE.Mesh(candleGeo, mainMat); candle.position.y = -0.35;
+                const flame = new THREE.Mesh(new THREE.SphereGeometry(0.03), new THREE.MeshBasicMaterial({color: 0xffaa00})); flame.position.y = -0.18;
+                group.add(candle, flame);
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.4, 0.2), invisibleHitboxMat); hitbox.position.y = -0.3; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+                const pointLight = new THREE.PointLight(0xffaa00, 0.5, 3); pointLight.position.y = -0.18; group.add(pointLight);
+            }
+            else if (item.subtype === 'trapdoor') {
+                const trapdoor = new THREE.Mesh(new THREE.BoxGeometry(1, 0.15, 1), mainMat); trapdoor.position.y = -0.425;
+                group.add(trapdoor); group.rotation.y = yaw;
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 1), invisibleHitboxMat); hitbox.position.y = -0.4; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'lantern') {
+                const lanternGeo = new THREE.BoxGeometry(0.4, 0.6, 0.4);
+                const lantern = new THREE.Mesh(lanternGeo, mainMat); lantern.position.y = -0.2;
+                const top = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.2), new THREE.MeshLambertMaterial({color:0x333333})); top.position.y = 0.15;
+                group.add(lantern, top);
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.8, 0.5), invisibleHitboxMat); hitbox.position.y = -0.1; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+                const pointLight = new THREE.PointLight(0xffaa00, 1.0, 5); pointLight.position.y = -0.2; group.add(pointLight);
+            }
+            else if (item.subtype === 'stairs') {
+                const tex = createPixelTexture({ name: item.name, color: item.color });
+                const stairsMat = new THREE.MeshLambertMaterial({ map: tex });
+                const bottomHalf = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 1), stairsMat); bottomHalf.position.y = -0.25;
+                const topHalf = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 0.5), stairsMat); topHalf.position.set(0, 0.25, -0.25);
+                group.add(bottomHalf, topHalf); group.rotation.y = yaw;
+                const hitbox = new THREE.Mesh(boxGeometry, invisibleHitboxMat); hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            else if (item.subtype === 'rail') {
+                const ironMat = new THREE.MeshLambertMaterial({ color: 0x999999 });
+                const woodMat = new THREE.MeshLambertMaterial({ color: 0x6b4226 });
+
+                function createStraight(isX) {
+                    const grp = new THREE.Group();
+                    const r1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.01), ironMat);
+                    const r2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.01), ironMat);
+                    if (isX) {
+                        r1.rotation.y = Math.PI/2; r2.rotation.y = Math.PI/2;
+                        r1.position.set(0, -0.4, 0.25); r2.position.set(0, -0.4, -0.25);
+                    } else {
+                        r1.position.set(0.25, -0.4, 0); r2.position.set(-0.25, -0.4, 0);
+                    }
+                    grp.add(r1, r2);
+
+                    const tieY = isX ? -0.476 : -0.475; // Z-fighting防止のわずかな高さ調整
+                    for(let i=0; i<4; i++){
+                        const tie = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.15), woodMat);
+                        if (isX) {
+                            tie.rotation.y = Math.PI/2;
+                            tie.position.set(-0.375 + i*0.25, tieY, 0);
+                        } else {
+                            tie.position.set(0, tieY, -0.375 + i*0.25);
+                        }
+                        grp.add(tie);
+                    }
+                    return grp;
+                }
+                function createCurve(rotY, tieYOffset) {
+                    const grp = new THREE.Group();
+
+                    for(let i=0; i<=4; i++){
+                        const angle = (i/4) * (Math.PI/2);
+                        const tie = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.15), woodMat);
+                        tie.position.set(-0.5 + Math.cos(angle)*0.5, -0.477 + tieYOffset, -0.5 + Math.sin(angle)*0.5);
+                        tie.rotation.y = -angle;
+                        grp.add(tie);
+                    }
+
+                    const numSegments = 8;
+                    for(let i=0; i<numSegments; i++){
+                        const a1 = (i/numSegments) * (Math.PI/2);
+                        const a2 = ((i+1)/numSegments) * (Math.PI/2);
+                        const aMid = (a1+a2)/2;
+
+                        const outLen = (Math.PI/2 * 0.75) / numSegments;
+                        const rOut = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, outLen * 1.05), ironMat);
+                        rOut.position.set(-0.5 + Math.cos(aMid)*0.75, -0.4, -0.5 + Math.sin(aMid)*0.75);
+                        rOut.rotation.y = -aMid;
+                        grp.add(rOut);
+
+                        const inLen = (Math.PI/2 * 0.25) / numSegments;
+                        const rIn = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, inLen * 1.1), ironMat);
+                        rIn.position.set(-0.5 + Math.cos(aMid)*0.25, -0.4, -0.5 + Math.sin(aMid)*0.25);
+                        rIn.rotation.y = -aMid;
+                        grp.add(rIn);
+                    }
+
+                    grp.rotation.y = rotY;
+                    return grp;
+                }
+                // すべてのパーツを事前に生成
+                const sz = createStraight(false);
+                const sx = createStraight(true);
+                const cnw = createCurve(0, 0); // 北-西
+                const cne = createCurve(-Math.PI/2, -0.001); // 北-東
+                const cse = createCurve(Math.PI, -0.002); // 南-東
+                const csw = createCurve(Math.PI/2, -0.003); // 南-西
+                // 初期状態は非表示
+                sz.visible = false; sx.visible = false;
+                cnw.visible = false; cne.visible = false;
+                cse.visible = false; csw.visible = false;
+                group.add(sz, sx, cnw, cne, cse, csw);
+                group.userData.parts = { sz, sx, cnw, cne, cse, csw };
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1, 0.2, 1), invisibleHitboxMat);
+                hitbox.position.y = -0.4; hitbox.userData.mainKey = `${x},${y},${z}`; group.add(hitbox);
+            }
+            return { group, blocksToOccupy };
+        }
+        const cuteEyeWhiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+        const cuteEyePupilMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
+        // ハイライトは光源の向きに関係なく白く光って見えてほしいのでMeshBasicMaterialにする
+        const cuteEyeSparkleMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        function addCuteEyes(parentHead, opts) {
+            // 牛・羊・猫・犬・魚など動物の頭(headメッシュ)に、白目+黒目のまん丸の目を左右対称に付ける共通ヘルパー。
+            // 黒目に小さな光(ハイライト)を1つ足すことで、にこっとした嬉しそうな瞳になるようにしている。
+            const eyeGeo = new THREE.SphereGeometry(opts.eyeRadius, 8, 8);
+            const pupilGeo = new THREE.SphereGeometry(opts.pupilRadius, 8, 8);
+            const sparkleGeo = new THREE.SphereGeometry(opts.pupilRadius * 0.4, 6, 6);
+            [1, -1].forEach(side => {
+                const eye = new THREE.Mesh(eyeGeo, cuteEyeWhiteMat);
+                eye.position.set(side * opts.xOffset, opts.y, opts.z);
+                parentHead.add(eye);
+                // 黒目を大きくしても不自然に飛び出さないよう、前後位置は黒目の大きさではなく白目の大きさを基準にする
+                const pupilZ = opts.z + opts.eyeRadius * 0.35;
+                const pupil = new THREE.Mesh(pupilGeo, cuteEyePupilMat);
+                pupil.position.set(side * opts.xOffset, opts.y, pupilZ);
+                parentHead.add(pupil);
+                const sparkle = new THREE.Mesh(sparkleGeo, cuteEyeSparkleMat);
+                sparkle.position.set(
+                    side * opts.xOffset + opts.pupilRadius * 0.35,
+                    opts.y + opts.pupilRadius * 0.45,
+                    pupilZ + opts.pupilRadius * 0.35
+                );
+                parentHead.add(sparkle);
+            });
+        }
+        const cuteMouthMat = new THREE.MeshLambertMaterial({ color: 0x5a2a2a });
+        function addSmileMouth(parent, opts) {
+            // 目と同じ考え方の共通ヘルパー。TorusGeometryの下半分の弧だけを使うことで、
+            // なめらかなU字カーブ = 微笑んでいる口、を各動物の顔に付けられるようにする。
+            const mouthGeo = new THREE.TorusGeometry(opts.radius, opts.tube, 6, 10, Math.PI);
+            const mouth = new THREE.Mesh(mouthGeo, cuteMouthMat);
+            mouth.rotation.z = Math.PI; // 弧の向きを反転させ、上に開いたU字(smile)にする
+            mouth.position.set(0, opts.y, opts.z);
+            parent.add(mouth);
+        }
+        function spawnCow(x, y, z) {
+            const animalGroup = new THREE.Group();
+            animalGroup.position.set(x, Math.floor(y) + 0.5, z);
+            animalGroup.userData.isAnimal = true;
+            animalGroup.userData.velocity = new THREE.Vector3(0, 0, 0);
+            animalGroup.userData.walkTimer = 0;
+            animalGroup.userData.isWalking = false;
+            animalGroup.userData.yaw = Math.random() * Math.PI * 2;
+            animalGroup.rotation.y = animalGroup.userData.yaw;
+            animalGroup.userData.targetYaw = animalGroup.userData.yaw;
+            const cowMat = createCowMaterial();
+            const darkMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.9), cowMat);
+            body.position.set(0, 0.65, 0);
+            animalGroup.add(body);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), cowMat);
+            head.position.set(0, 0.9, 0.5);
+            animalGroup.add(head);
+            const horn1 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.1), darkMat); horn1.position.set(0.2, 0.3, 0);
+            const horn2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.1), darkMat); horn2.position.set(-0.2, 0.3, 0);
+            head.add(horn1, horn2);
+
+            const snout = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.1), darkMat);
+            snout.position.set(0, -0.1, 0.3);
+            head.add(snout);
+            // 愛らしい顔になるよう、まん丸の目を鼻面の上に付ける
+            addCuteEyes(head, { xOffset: 0.13, y: 0.08, z: 0.26, eyeRadius: 0.09, pupilRadius: 0.06 });
+            // 微笑んでいるような口を鼻面に付ける
+            addSmileMouth(snout, { y: -0.02, z: 0.052, radius: 0.09, tube: 0.015 });
+            const legs = [];
+            const legPositions = [
+                {x: 0.2, y: 0.4, z: 0.35}, {x: -0.2, y: 0.4, z: 0.35},
+                {x: 0.2, y: 0.4, z: -0.35}, {x: -0.2, y: 0.4, z: -0.35}
+            ];
+
+            legPositions.forEach(pos => {
+                const pivot = new THREE.Group();
+                pivot.position.set(pos.x, pos.y, pos.z);
+                const legMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.4, 0.2), cowMat);
+                legMesh.position.set(0, -0.2, 0);
+                pivot.add(legMesh);
+                animalGroup.add(pivot);
+                legs.push(pivot);
+            });
+
+            animalGroup.userData.legs = legs;
+            const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 1.2), invisibleHitboxMat);
+            hitbox.position.set(0, 0.6, 0);
+            animalGroup.add(hitbox);
+            scene.add(animalGroup);
+            animals.push(animalGroup);
+        }
+        function createSheepWoolMaterial(baseColor) {
+            const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = baseColor || '#f2f2f2'; ctx.fillRect(0, 0, 64, 64);
+            // 半透明の黒でぼかしを乗せることで、色が違ってもふわふわした毛の質感になるようにする
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            for (let i = 0; i < 14; i++) {
+                ctx.beginPath();
+                ctx.arc(Math.random() * 64, Math.random() * 64, Math.random() * 5 + 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+            return new THREE.MeshLambertMaterial({ map: tex });
+        }
+        function spawnSheep(x, y, z, color) {
+            // 牛(spawnCow)と同じ枠組みで作った羊。userData.speedとcanStepUpだけを持たせることで、
+            // 牛の挙動(既存プログラム)には一切手を加えずに「牛より速く、1段の段差なら乗り越えられる」を実現する。
+            const animalGroup = new THREE.Group();
+            animalGroup.position.set(x, Math.floor(y) + 0.5, z);
+            animalGroup.userData.isAnimal = true;
+            animalGroup.userData.isSheep = true;
+            animalGroup.userData.velocity = new THREE.Vector3(0, 0, 0);
+            animalGroup.userData.walkTimer = 0;
+            animalGroup.userData.isWalking = false;
+            animalGroup.userData.yaw = Math.random() * Math.PI * 2;
+            animalGroup.rotation.y = animalGroup.userData.yaw;
+            animalGroup.userData.targetYaw = animalGroup.userData.yaw;
+            animalGroup.userData.speed = 0.5; // 牛(0.3)より速い
+            animalGroup.userData.canStepUp = true; // 1ブロックの高さまでの段差なら乗り越えられる
+
+            const woolMat = createSheepWoolMaterial(color);
+            const skinMat = new THREE.MeshLambertMaterial({ color: 0xdcaea3 });
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 1.0), woolMat);
+            body.position.set(0, 0.75, 0);
+            animalGroup.add(body);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), skinMat);
+            head.position.set(0, 0.85, 0.6);
+            animalGroup.add(head);
+            const earGeo = new THREE.BoxGeometry(0.1, 0.15, 0.05);
+            const ear1 = new THREE.Mesh(earGeo, skinMat); ear1.position.set(0.22, 0.85, 0.55);
+            const ear2 = new THREE.Mesh(earGeo, skinMat); ear2.position.set(-0.22, 0.85, 0.55);
+            animalGroup.add(ear1, ear2);
+            // 頭にも毛(ウール)を乗せる
+            const headWool = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.18, 0.4), woolMat);
+            headWool.position.set(0, 0.2, -0.02);
+            head.add(headWool);
+            // 愛らしい顔になるよう、まん丸の目を付ける
+            addCuteEyes(head, { xOffset: 0.11, y: 0.03, z: 0.21, eyeRadius: 0.08, pupilRadius: 0.055 });
+            // 微笑んでいるような口を付ける
+            addSmileMouth(head, { y: -0.07, z: 0.21, radius: 0.06, tube: 0.012 });
+
+            const legs = [];
+            const legPositions = [
+                {x: 0.22, y: 0.35, z: 0.35}, {x: -0.22, y: 0.35, z: 0.35},
+                {x: 0.22, y: 0.35, z: -0.35}, {x: -0.22, y: 0.35, z: -0.35}
+            ];
+            legPositions.forEach(pos => {
+                const pivot = new THREE.Group();
+                pivot.position.set(pos.x, pos.y, pos.z);
+                const legMesh = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.35, 0.18), skinMat);
+                legMesh.position.set(0, -0.175, 0);
+                pivot.add(legMesh);
+                animalGroup.add(pivot);
+                legs.push(pivot);
+            });
+            animalGroup.userData.legs = legs;
+
+            const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 1.2), invisibleHitboxMat);
+            hitbox.position.set(0, 0.6, 0);
+            animalGroup.add(hitbox);
+            scene.add(animalGroup);
+            animals.push(animalGroup);
+        }
+        function createFurMaterial(baseColor) {
+            // 羊のウール素材と同じ考え方で、色付きの毛並みっぽい質感を作る共通ヘルパー(猫・犬で使う)
+            const canvas = document.createElement('canvas'); canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = baseColor || '#cccccc'; ctx.fillRect(0, 0, 64, 64);
+            ctx.fillStyle = 'rgba(0,0,0,0.12)';
+            for (let i = 0; i < 10; i++) {
+                ctx.fillRect(Math.random() * 64, Math.random() * 64, Math.random() * 14 + 6, Math.random() * 6 + 3);
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+            return new THREE.MeshLambertMaterial({ map: tex });
+        }
+        function spawnCat(x, y, z, color) {
+            // 羊(spawnSheep)と全く同じuserData(speed/canStepUp)にすることで、
+            // 「挙動は羊と同じ」という要望通りにしつつ、牛の既存コードには一切触れない。
+            const animalGroup = new THREE.Group();
+            animalGroup.position.set(x, Math.floor(y) + 0.5, z);
+            animalGroup.userData.isAnimal = true;
+            animalGroup.userData.isCat = true;
+            animalGroup.userData.velocity = new THREE.Vector3(0, 0, 0);
+            animalGroup.userData.walkTimer = 0;
+            animalGroup.userData.isWalking = false;
+            animalGroup.userData.yaw = Math.random() * Math.PI * 2;
+            animalGroup.rotation.y = animalGroup.userData.yaw;
+            animalGroup.userData.targetYaw = animalGroup.userData.yaw;
+            animalGroup.userData.speed = 7.5; // 従来(15.0)の半分
+            animalGroup.userData.canStepUp = true;
+
+            const furMat = createFurMaterial(color || '#e8a852');
+            const noseMat = new THREE.MeshLambertMaterial({ color: 0xe0748a });
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.28, 0.5), furMat);
+            body.position.set(0, 0.35, 0);
+            animalGroup.add(body);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.26, 0.26), furMat);
+            head.position.set(0, 0.5, 0.32);
+            animalGroup.add(head);
+            // 三角のとがった耳
+            const earGeo = new THREE.ConeGeometry(0.07, 0.14, 4);
+            const ear1 = new THREE.Mesh(earGeo, furMat); ear1.position.set(0.09, 0.16, 0); ear1.rotation.y = Math.PI / 4;
+            const ear2 = new THREE.Mesh(earGeo, furMat); ear2.position.set(-0.09, 0.16, 0); ear2.rotation.y = Math.PI / 4;
+            head.add(ear1, ear2);
+            // 愛らしい顔になるよう、まん丸の目を付ける
+            addCuteEyes(head, { xOffset: 0.09, y: 0, z: 0.13, eyeRadius: 0.05, pupilRadius: 0.035 });
+            const nose = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.04), noseMat);
+            nose.position.set(0, -0.05, 0.14);
+            head.add(nose);
+            // 微笑んでいるような口を鼻の下に付ける
+            addSmileMouth(head, { y: -0.1, z: 0.15, radius: 0.045, tube: 0.009 });
+            // しっぽ
+            const tail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.35), furMat);
+            tail.position.set(0, 0.45, -0.35); tail.rotation.x = Math.PI / 6;
+            animalGroup.add(tail);
+
+            const legs = [];
+            const legPositions = [
+                {x: 0.11, y: 0.2, z: 0.18}, {x: -0.11, y: 0.2, z: 0.18},
+                {x: 0.11, y: 0.2, z: -0.18}, {x: -0.11, y: 0.2, z: -0.18}
+            ];
+            legPositions.forEach(pos => {
+                const pivot = new THREE.Group();
+                pivot.position.set(pos.x, pos.y, pos.z);
+                const legMesh = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.2, 0.09), furMat);
+                legMesh.position.set(0, -0.1, 0);
+                pivot.add(legMesh);
+                animalGroup.add(pivot);
+                legs.push(pivot);
+            });
+            animalGroup.userData.legs = legs;
+
+            const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.6, 0.75), invisibleHitboxMat);
+            hitbox.position.set(0, 0.35, 0);
+            animalGroup.add(hitbox);
+            scene.add(animalGroup);
+            animals.push(animalGroup);
+        }
+        function spawnDog(x, y, z, color) {
+            // 猫と同じく、羊(spawnSheep)と同じuserData(speed/canStepUp)にする。
+            const animalGroup = new THREE.Group();
+            animalGroup.position.set(x, Math.floor(y) + 0.5, z);
+            animalGroup.userData.isAnimal = true;
+            animalGroup.userData.isDog = true;
+            animalGroup.userData.velocity = new THREE.Vector3(0, 0, 0);
+            animalGroup.userData.walkTimer = 0;
+            animalGroup.userData.isWalking = false;
+            animalGroup.userData.yaw = Math.random() * Math.PI * 2;
+            animalGroup.rotation.y = animalGroup.userData.yaw;
+            animalGroup.userData.targetYaw = animalGroup.userData.yaw;
+            animalGroup.userData.speed = 7.5; // 従来(15.0)の半分
+            animalGroup.userData.canStepUp = true;
+
+            const furMat = createFurMaterial(color || '#c8935a');
+            const darkMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.34, 0.6), furMat);
+            body.position.set(0, 0.4, 0);
+            animalGroup.add(body);
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.28, 0.28), furMat);
+            head.position.set(0, 0.58, 0.38);
+            animalGroup.add(head);
+            // マズル(鼻先)
+            const muzzle = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.14), furMat);
+            muzzle.position.set(0, -0.06, 0.18);
+            head.add(muzzle);
+            const nose = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.04), darkMat);
+            nose.position.set(0, 0, 0.09);
+            muzzle.add(nose);
+            // 垂れ耳
+            const earGeo = new THREE.BoxGeometry(0.06, 0.18, 0.12);
+            const ear1 = new THREE.Mesh(earGeo, furMat); ear1.position.set(0.13, 0.06, -0.02); ear1.rotation.z = -0.3;
+            const ear2 = new THREE.Mesh(earGeo, furMat); ear2.position.set(-0.13, 0.06, -0.02); ear2.rotation.z = 0.3;
+            head.add(ear1, ear2);
+            // 愛らしい顔になるよう、まん丸の目を付ける
+            addCuteEyes(head, { xOffset: 0.09, y: 0.02, z: 0.14, eyeRadius: 0.055, pupilRadius: 0.04 });
+            // 微笑んでいるような口をマズルに付ける
+            addSmileMouth(muzzle, { y: -0.03, z: 0.075, radius: 0.05, tube: 0.01 });
+            // しっぽ(元気に立った感じ)
+            const tail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), furMat);
+            tail.position.set(0, 0.5, -0.32); tail.rotation.x = -Math.PI / 4;
+            animalGroup.add(tail);
+
+            const legs = [];
+            const legPositions = [
+                {x: 0.14, y: 0.24, z: 0.2}, {x: -0.14, y: 0.24, z: 0.2},
+                {x: 0.14, y: 0.24, z: -0.2}, {x: -0.14, y: 0.24, z: -0.2}
+            ];
+            legPositions.forEach(pos => {
+                const pivot = new THREE.Group();
+                pivot.position.set(pos.x, pos.y, pos.z);
+                const legMesh = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.24, 0.11), furMat);
+                legMesh.position.set(0, -0.12, 0);
+                pivot.add(legMesh);
+                animalGroup.add(pivot);
+                legs.push(pivot);
+            });
+            animalGroup.userData.legs = legs;
+
+            const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.75, 0.85), invisibleHitboxMat);
+            hitbox.position.set(0, 0.4, 0);
+            animalGroup.add(hitbox);
+            scene.add(animalGroup);
+            animals.push(animalGroup);
+        }
+        // ==================== 熱帯魚(水の中だけに存在できる。水の外では消える) ====================
+        function spawnFish(x, y, z) {
+            const key = `${x},${y},${z}`;
+            const cellMesh = activeBlocks[key];
+            if (!cellMesh || !cellMesh.userData.isWater) return; // 水の中にしか置けない
+            const fishGroup = new THREE.Group();
+            fishGroup.position.set(x, y, z);
+            fishGroup.userData.isFish = true;
+            fishGroup.userData.dir = new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5) * 0.6, (Math.random() - 0.5)).normalize();
+            fishGroup.userData.wanderTimer = Math.random() * 2 + 1;
+            fishGroup.userData.speed = 0.5;
+
+            const bodyMat = new THREE.MeshLambertMaterial({ color: 0xff7f27 });
+            const whiteMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+            const finMat = new THREE.MeshLambertMaterial({ color: 0xe85d10 });
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.32), bodyMat);
+            fishGroup.add(body);
+            // 白い縞模様(カクレクマノミらしさ)
+            const stripe1 = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.04), whiteMat); stripe1.position.set(0, 0, 0.04);
+            const stripe2 = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.17, 0.04), whiteMat); stripe2.position.set(0, 0, -0.08);
+            fishGroup.add(stripe1, stripe2);
+            // 尾びれ
+            const tail = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.16, 0.14), finMat);
+            tail.position.set(0, 0, -0.22);
+            fishGroup.add(tail);
+            // 背びれ・腹びれ
+            const dorsalFin = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.14), finMat);
+            dorsalFin.position.set(0, 0.11, 0);
+            fishGroup.add(dorsalFin);
+            const ventralFin = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, 0.1), finMat);
+            ventralFin.position.set(0, -0.1, 0.02);
+            fishGroup.add(ventralFin);
+            // 胸びれ(横)
+            const pectoralGeo = new THREE.BoxGeometry(0.1, 0.06, 0.02);
+            const pFin1 = new THREE.Mesh(pectoralGeo, finMat); pFin1.position.set(0.1, -0.02, 0.08);
+            const pFin2 = new THREE.Mesh(pectoralGeo, finMat); pFin2.position.set(-0.1, -0.02, 0.08);
+            fishGroup.add(pFin1, pFin2);
+            // 頭(丸くして、まん丸のかわいい目をつける)
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), bodyMat);
+            head.position.set(0, 0, 0.16);
+            fishGroup.add(head);
+            addCuteEyes(head, { xOffset: 0.05, y: 0.01, z: 0.06, eyeRadius: 0.035, pupilRadius: 0.024 });
+            // 微笑んでいるような口を付ける
+            addSmileMouth(head, { y: -0.03, z: 0.07, radius: 0.035, tube: 0.008 });
+
+            const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.5), invisibleHitboxMat);
+            fishGroup.add(hitbox);
+
+            scene.add(fishGroup);
+            fishes.push(fishGroup);
+        }
+        // ==================== トロッコ(レール専用の乗り物) ====================
+        function spawnMinecart(x, y, z) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            group.userData.isMinecart = true;
+            group.userData.cellX = x; group.userData.cellY = y; group.userData.cellZ = z;
+            group.userData.dir = { dx: 0, dz: 1 };
+            group.userData.moving = false;
+            group.userData.riding = false;
+            group.userData.promptDismissed = false;
+
+            const cartMat = new THREE.MeshLambertMaterial({ color: 0x5a4632 });
+            const metalMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+            const baseY = -0.35; // レールのマス(セル下寄り)に合わせて低めに配置
+
+            const bottom = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 0.6), cartMat); bottom.position.set(0, baseY, 0);
+            const wallFront = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.35, 0.08), cartMat); wallFront.position.set(0, baseY + 0.2, 0.3);
+            const wallBack = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.35, 0.08), cartMat); wallBack.position.set(0, baseY + 0.2, -0.3);
+            const wallLeft = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.6), cartMat); wallLeft.position.set(0.4, baseY + 0.2, 0);
+            const wallRight = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.6), cartMat); wallRight.position.set(-0.4, baseY + 0.2, 0);
+            group.add(bottom, wallFront, wallBack, wallLeft, wallRight);
+
+            const wheelGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.06, 8);
+            [{x:0.35,z:0.22}, {x:-0.35,z:0.22}, {x:0.35,z:-0.22}, {x:-0.35,z:-0.22}].forEach(wp => {
+                const wheel = new THREE.Mesh(wheelGeo, metalMat);
+                wheel.rotation.x = Math.PI / 2;
+                wheel.position.set(wp.x, baseY - 0.05, wp.z);
+                group.add(wheel);
+            });
+
+            const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.7), invisibleHitboxMat);
+            hitbox.position.set(0, baseY + 0.2, 0);
+            group.add(hitbox);
+
+            scene.add(group);
+            minecarts.push(group);
+            return group;
+        }
+        function getRailNeighbors(x, y, z) {
+            // 水平方向の各隣接マスについて、同じ高さのレールを最優先で探し、
+            // 無ければ1段上・1段下のレールも探すことで、レールが1ブロックの高さを登り降りできるようにする。
+            const dirs = [{ dx: 1, dz: 0 }, { dx: -1, dz: 0 }, { dx: 0, dz: 1 }, { dx: 0, dz: -1 }];
+            const isRailBlock = (nx, ny, nz) => {
+                const m = activeBlocks[`${nx},${ny},${nz}`];
+                return m && m.userData && m.userData.blockId === 101;
+            };
+            const result = [];
+            dirs.forEach(d => {
+                if (isRailBlock(x + d.dx, y, z + d.dz)) {
+                    result.push({ dx: d.dx, dz: d.dz, dy: 0 });
+                } else if (isRailBlock(x + d.dx, y + 1, z + d.dz)) {
+                    result.push({ dx: d.dx, dz: d.dz, dy: 1 }); // 上り坂
+                } else if (isRailBlock(x + d.dx, y - 1, z + d.dz)) {
+                    result.push({ dx: d.dx, dz: d.dz, dy: -1 }); // 下り坂
+                }
+            });
+            return result;
+        }
+        function tryStartMinecartMove(cart, dir) {
+            const data = cart.userData;
+            if (data.moving) return;
+            const neighbors = getRailNeighbors(data.cellX, data.cellY, data.cellZ);
+            if (neighbors.length === 0) return; // レールに繋がっていないので動かない
+            let chosen = neighbors.find(n => n.dx === dir.dx && n.dz === dir.dz);
+            if (!chosen) {
+                const reverseDir = { dx: -data.dir.dx, dz: -data.dir.dz };
+                chosen = neighbors.find(n => !(n.dx === reverseDir.dx && n.dz === reverseDir.dz)) || neighbors[0];
+            }
+            data.fromCell = { x: data.cellX, y: data.cellY, z: data.cellZ };
+            data.toCell = { x: data.cellX + chosen.dx, y: data.cellY + (chosen.dy || 0), z: data.cellZ + chosen.dz };
+            data.dir = { dx: chosen.dx, dz: chosen.dz };
+            data.progress = 0;
+            data.moving = true;
+        }
+        function updateMinecartRide(delta) {
+            const cart = currentRidingCart;
+            if (!cart) return;
+            const data = cart.userData;
+            const speed = 30.0; // セル/秒(従来の3.0の10倍)
+            if (!data.moving) {
+                if (moveForward) tryStartMinecartMove(cart, data.dir);
+                else if (moveBackward) tryStartMinecartMove(cart, { dx: -data.dir.dx, dz: -data.dir.dz });
+            }
+            if (data.moving) {
+                data.progress += speed * delta;
+                if (data.progress >= 1) data.progress = 1;
+                const fx = data.fromCell.x + (data.toCell.x - data.fromCell.x) * data.progress;
+                const fz = data.fromCell.z + (data.toCell.z - data.fromCell.z) * data.progress;
+                const fy = data.fromCell.y + (data.toCell.y - data.fromCell.y) * data.progress;
+                cart.position.set(fx, fy, fz);
+                if (data.progress >= 1) {
+                    data.moving = false;
+                    data.cellX = data.toCell.x; data.cellY = data.toCell.y; data.cellZ = data.toCell.z;
+                    if (moveForward || moveBackward) tryStartMinecartMove(cart, data.dir);
+                }
+            }
+            playerGroup.position.set(cart.position.x, cart.position.y + 0.9, cart.position.z);
+        }
+        function checkMinecartProximity() {
+            if (currentRidingCart || isCartPromptOpen || isInventoryOpen || isRespawnPromptOpen) return;
+            for (const cart of minecarts) {
+                if (cart.userData.riding) continue;
+                const dx = playerGroup.position.x - cart.position.x;
+                const dy = playerGroup.position.y - cart.position.y;
+                const dz = playerGroup.position.z - cart.position.z;
+                const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (dist < 1.2) {
+                    if (!cart.userData.promptDismissed && !isCartPromptOpen) { showCartPrompt(cart); break; }
+                } else {
+                    cart.userData.promptDismissed = false;
+                }
+            }
+        }
+        let isCartPromptOpen = false;
+        let activePromptCart = null;
+        function showCartPrompt(cart) {
+            if (isCartPromptOpen || isInventoryOpen || isRespawnPromptOpen) return;
+            isCartPromptOpen = true;
+            activePromptCart = cart;
+            document.getElementById('cart-prompt-overlay').style.display = 'flex';
+            document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+            if (document.exitPointerLock) document.exitPointerLock();
+            isLocked = false;
+        }
+        function hideCartPrompt() {
+            isCartPromptOpen = false;
+            activePromptCart = null;
+            document.getElementById('cart-prompt-overlay').style.display = 'none';
+        }
+        function startRidingCart(cart) {
+            currentRidingCart = cart;
+            cart.userData.riding = true;
+            cart.userData.promptDismissed = true;
+            velocity.set(0, 0, 0);
+        }
+        function exitMinecart() {
+            if (!currentRidingCart) return;
+            const cart = currentRidingCart;
+            cart.userData.riding = false;
+            cart.userData.promptDismissed = true;
+            currentRidingCart = null;
+            playerGroup.position.set(cart.position.x - cart.userData.dir.dx * 0.9, cart.position.y + 0.3, cart.position.z - cart.userData.dir.dz * 0.9);
+            velocity.set(0, 0, 0);
+        }
+        document.getElementById('cart-ride-yes').addEventListener('click', () => {
+            if (activePromptCart) startRidingCart(activePromptCart);
+            hideCartPrompt();
+            lockPointer();
+        });
+        document.getElementById('cart-ride-no').addEventListener('click', () => {
+            if (activePromptCart) activePromptCart.userData.promptDismissed = true;
+            hideCartPrompt();
+            lockPointer();
+        });
+        // ==================== リスポーン ====================
+        let isRespawnPromptOpen = false;
+        function showRespawnPrompt() {
+            if (isRespawnPromptOpen || isCartPromptOpen || isInventoryOpen) return;
+            isRespawnPromptOpen = true;
+            document.getElementById('respawn-prompt-overlay').style.display = 'flex';
+            document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+            if (document.exitPointerLock) document.exitPointerLock();
+            isLocked = false;
+        }
+        function hideRespawnPrompt() {
+            isRespawnPromptOpen = false;
+            document.getElementById('respawn-prompt-overlay').style.display = 'none';
+        }
+        function respawnPlayer() {
+            if (currentRidingCart) exitMinecart(); // 乗車中なら先に強制的に降ろす
+            const groundY = getTerrainHeight(SPAWN_X, SPAWN_Z);
+            playerGroup.position.set(SPAWN_X, groundY + 10, SPAWN_Z);
+            velocity.set(0, 0, 0);
+            isFlying = false;
+            canJump = false;
+            smoothCameraY = playerGroup.position.y;
+        }
+        document.getElementById('respawn-yes').addEventListener('click', () => {
+            respawnPlayer();
+            hideRespawnPrompt();
+            lockPointer();
+        });
+        document.getElementById('respawn-no').addEventListener('click', () => {
+            hideRespawnPrompt();
+            lockPointer();
+        });
+        let waterUpdateQueue = new Set();
+        function updateWaterFaces(x, y, z, mesh) {
+            if (!mesh || !mesh.userData.isWater) return;
+            const dirs = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
+            const matArr = [];
+            for (let i = 0; i < 6; i++) {
+                const nBlock = activeBlocks[`${x + dirs[i][0]},${y + dirs[i][1]},${z + dirs[i][2]}`];
+                if (nBlock && nBlock.userData.isWater) matArr.push(new THREE.MeshBasicMaterial({ visible: false }));
+                else matArr.push(ALL_BLOCKS_MAP[99].material);
+            }
+            mesh.material = matArr;
+        }
+        function addBlockMesh(x, y, z, blockInfo, yaw = 0, waterLevel = 3) {
+            if (blockInfo.type === 'animal') {
+                if (blockInfo.subtype === 'cow') spawnCow(x, y, z);
+                else if (blockInfo.subtype === 'sheep') spawnSheep(x, y, z, blockInfo.color);
+                else if (blockInfo.subtype === 'cat') spawnCat(x, y, z, blockInfo.color);
+                else if (blockInfo.subtype === 'dog') spawnDog(x, y, z, blockInfo.color);
+                return;
+            }
+            if (blockInfo.type === 'cart') {
+                spawnMinecart(x, y, z);
+                return;
+            }
+            if (blockInfo.type === 'fish') {
+                spawnFish(x, y, z);
+                return;
+            }
+            const key = `${x},${y},${z}`;
+            if (activeBlocks[key] && activeBlocks[key].userData.isWater && !blockInfo.isWater) {
+                removeBlockMesh(key);
+            } else if (activeBlocks[key]) return;
+            let mesh;
+            if (blockInfo.type === 'furniture') {
+                const { group, blocksToOccupy } = createFurniture(blockInfo, x, y, z, yaw);
+                for (const k of blocksToOccupy) { if (activeBlocks[k]) return; }
+                mesh = group; scene.add(mesh);
+                mesh.children.forEach(child => {
+                    if (child.material === invisibleHitboxMat) blockMeshes.push(child);
+                });
+                for (const k of blocksToOccupy) { activeBlocks[k] = mesh; }
+            } else {
+                if (blockInfo.isWater) mesh = new THREE.Mesh(boxGeometry, []);
+                else mesh = new THREE.Mesh(boxGeometry, new THREE.MeshLambertMaterial({ map: blockInfo.map, transparent: blockInfo.transparent, alphaTest: blockInfo.transparent ? 0.5 : 0 }));
+
+                mesh.position.set(x, y, z); mesh.userData.mainKey = key;
+                mesh.userData.isWater = blockInfo.isWater || false;
+                mesh.userData.blockId = blockInfo.id;
+                if (blockInfo.isWater) {
+                    mesh.userData.waterLevel = waterLevel;
+                    waterUpdateQueue.add(key);
+                }
+                scene.add(mesh); blockMeshes.push(mesh); activeBlocks[key] = mesh;
+            }
+            // レールの自動接続更新
+            if (blockInfo.id === 101) {
+                updateRailOrientation(x, y, z);
+                updateRailOrientation(x+1, y, z);
+                updateRailOrientation(x-1, y, z);
+                updateRailOrientation(x, y, z+1);
+                updateRailOrientation(x, y, z-1);
+                // 1段上/1段下にある斜めレールも、新しく置いたレールに気付いて傾きを更新できるようにする
+                updateRailOrientation(x+1, y+1, z);
+                updateRailOrientation(x-1, y+1, z);
+                updateRailOrientation(x, y+1, z+1);
+                updateRailOrientation(x, y+1, z-1);
+                updateRailOrientation(x+1, y-1, z);
+                updateRailOrientation(x-1, y-1, z);
+                updateRailOrientation(x, y-1, z+1);
+                updateRailOrientation(x, y-1, z-1);
+            }
+            // フェンスの自動接続更新(90度の曲がり角・T字・十字に対応。色違いのフェンスも対象)
+            if (blockInfo.subtype === 'fence') {
+                updateFenceConnections(x, y, z);
+                updateFenceConnections(x+1, y, z);
+                updateFenceConnections(x-1, y, z);
+                updateFenceConnections(x, y, z+1);
+                updateFenceConnections(x, y, z-1);
+            }
+            const dirs = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
+            for (let d of dirs) {
+                const nKey = `${x+d[0]},${y+d[1]},${z+d[2]}`;
+                const nMesh = activeBlocks[nKey];
+                if (nMesh && nMesh.userData.isWater) {
+                    waterUpdateQueue.add(nKey); updateWaterFaces(x+d[0], y+d[1], z+d[2], nMesh);
+                }
+            }
+            if (blockInfo.isWater) updateWaterFaces(x, y, z, mesh);
+        }
+        function removeBlockMesh(key) {
+            const mesh = activeBlocks[key];
+            if (mesh) {
+                const wasWater = mesh.userData && mesh.userData.isWater;
+                scene.remove(mesh);
+                if (mesh.userData && mesh.userData.isFurniture) {
+                    mesh.children.forEach(child => {
+                        const index = blockMeshes.indexOf(child);
+                        if (index > -1) blockMeshes.splice(index, 1);
+                    });
+                } else {
+                    const index = blockMeshes.indexOf(mesh);
+                    if (index > -1) blockMeshes.splice(index, 1);
+                }
+                const [x, y, z] = key.split(',').map(Number);
+                Object.keys(activeBlocks).forEach(k => { if (activeBlocks[k] === mesh) delete activeBlocks[k]; });
+                // レールの自動接続解除
+                if (mesh.userData && mesh.userData.blockId === 101) {
+                    updateRailOrientation(x+1, y, z);
+                    updateRailOrientation(x-1, y, z);
+                    updateRailOrientation(x, y, z+1);
+                    updateRailOrientation(x, y, z-1);
+                    // 1段上/1段下の斜めレールも、繋がっていたレールが消えたことに気付いて傾きを更新できるようにする
+                    updateRailOrientation(x+1, y+1, z);
+                    updateRailOrientation(x-1, y+1, z);
+                    updateRailOrientation(x, y+1, z+1);
+                    updateRailOrientation(x, y+1, z-1);
+                    updateRailOrientation(x+1, y-1, z);
+                    updateRailOrientation(x-1, y-1, z);
+                    updateRailOrientation(x, y-1, z+1);
+                    updateRailOrientation(x, y-1, z-1);
+                }
+                // フェンスの自動接続解除(色違いのフェンスも対象)
+                if (mesh.userData && mesh.userData.isFence) {
+                    updateFenceConnections(x+1, y, z);
+                    updateFenceConnections(x-1, y, z);
+                    updateFenceConnections(x, y, z+1);
+                    updateFenceConnections(x, y, z-1);
+                }
+                const dirs = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
+                const touchedWaterKeys = [];
+                for (let d of dirs) {
+                    const nKey = `${x+d[0]},${y+d[1]},${z+d[2]}`;
+                    const nMesh = activeBlocks[nKey];
+                    if (nMesh && nMesh.userData.isWater) {
+                        waterUpdateQueue.add(nKey); updateWaterFaces(x+d[0], y+d[1], z+d[2], nMesh);
+                        touchedWaterKeys.push(nKey);
+                    }
+                }
+                // 壊したのが水以外のブロック(=囲いの壁など)で、隣に水たまりがあった場合は
+                // つながっている水全体を「流れ出て地面に吸い込まれる」ように排水させる
+                if (!wasWater && touchedWaterKeys.length > 0) {
+                    triggerWaterDrainFrom(touchedWaterKeys);
+                }
+            }
+        }
+        function triggerWaterDrainFrom(startKeys) {
+            // 排水の起点(壊された壁に隣接する水)からBFSで繋がっている水を辿り、
+            // 壁に近いマスから順に少しずつ遅れて排水させることで「流れ出ていく」演出にする
+            const visited = new Set();
+            let frontier = startKeys.filter(k => {
+                const m = activeBlocks[k];
+                return m && m.userData.isWater && m.userData.drainingTick === undefined;
+            });
+            let waveDelay = 0;
+            const dirs = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
+            while (frontier.length > 0) {
+                const nextFrontier = [];
+                for (const key of frontier) {
+                    if (visited.has(key)) continue;
+                    visited.add(key);
+                    const mesh = activeBlocks[key];
+                    if (!mesh || !mesh.userData.isWater || mesh.userData.drainingTick !== undefined) continue;
+                    mesh.userData.drainingTick = 2 + waveDelay;
+                    waterUpdateQueue.add(key);
+                    const [x, y, z] = key.split(',').map(Number);
+                    for (const d of dirs) {
+                        const nKey = `${x+d[0]},${y+d[1]},${z+d[2]}`;
+                        if (visited.has(nKey)) continue;
+                        const nMesh = activeBlocks[nKey];
+                        if (nMesh && nMesh.userData.isWater && nMesh.userData.drainingTick === undefined) nextFrontier.push(nKey);
+                    }
+                }
+                frontier = nextFrontier;
+                waveDelay += 1;
+            }
+        }
+        function isWaterBodyEnclosed(startX, startY, startZ) {
+            // まず繋がっている水のかたまり(水本体)を洗い出す
+            const dirs6 = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
+            const waterVisited = new Set();
+            let waterQueue = [`${startX},${startY},${startZ}`];
+            while (waterQueue.length > 0) {
+                const key = waterQueue.pop();
+                if (waterVisited.has(key)) continue;
+                const mesh = activeBlocks[key];
+                if (!mesh || !mesh.userData.isWater) continue;
+                waterVisited.add(key);
+                const [x, y, z] = key.split(',').map(Number);
+                for (const d of dirs6) {
+                    const nKey = `${x+d[0]},${y+d[1]},${z+d[2]}`;
+                    if (!waterVisited.has(nKey)) waterQueue.push(nKey);
+                }
+            }
+            if (waterVisited.size === 0) return true; // 水がもう無い(判定不要)
+            // 水本体に隣接する「何も無いマス」から、水の高さと同じ層だけを横方向にたどり、
+            // 壁で完全に囲まれた有限の範囲に収まっているかを調べる。
+            // (水は横方向にしか広がらないゲーム内の仕様に合わせ、上下は追わない=天井の有無は問わない)
+            const dirs4 = [[1,0,0], [-1,0,0], [0,0,1], [0,0,-1]];
+            const airVisited = new Set();
+            let airQueue = [];
+            waterVisited.forEach(wKey => {
+                const [x, y, z] = wKey.split(',').map(Number);
+                for (const d of dirs4) {
+                    const nKey = `${x+d[0]},${y},${z+d[2]}`;
+                    if (waterVisited.has(nKey) || airVisited.has(nKey)) return;
+                    if (!activeBlocks[nKey]) airQueue.push(nKey);
+                }
+            });
+            const MAX_AIR_CELLS = 300; // これを超えて広がるなら「開放地」とみなして囲いなし判定にする
+            let explored = 0;
+            while (airQueue.length > 0) {
+                const key = airQueue.pop();
+                if (airVisited.has(key)) continue;
+                airVisited.add(key);
+                explored++;
+                if (explored > MAX_AIR_CELLS) return false; // 開放的すぎる = 囲われていない
+                const [x, y, z] = key.split(',').map(Number);
+                for (const d of dirs4) {
+                    const nKey = `${x+d[0]},${y},${z+d[2]}`;
+                    if (waterVisited.has(nKey) || airVisited.has(nKey)) continue;
+                    if (!activeBlocks[nKey]) airQueue.push(nKey); // 空きマスのみ先へ進む(固体ブロックは壁として止まる)
+                }
+            }
+            return true; // 空きスペースの広がりが有限に収まった = 囲われている
+        }
+        function checkWaterEnclosure(x, y, z) {
+            const key = `${x},${y},${z}`;
+            const mesh = activeBlocks[key];
+            if (!mesh || !mesh.userData.isWater) return; // 既に無くなっている/変化した
+            if (!isWaterBodyEnclosed(x, y, z)) {
+                // 囲いの中ではない(開けた場所の)水なので、地面に染み込ませて消す
+                triggerWaterDrainFrom([key]);
+            }
+        }
+        function scheduleWaterEnclosureCheck(x, y, z) {
+            // 水が広がりきるまで少し待ってから、囲われているかどうかを判定する
+            setTimeout(() => { checkWaterEnclosure(x, y, z); }, 1200);
+        }
+        const raycaster = new THREE.Raycaster();
+        let isSwinging = false; let swingTime = 0; const SWING_DURATION = 0.15;
+        function handlePointerAction(event) {
+            if (!isLocked) return;
+            isSwinging = true; swingTime = 0;
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            let checkTargets = [...blockMeshes];
+            animals.forEach(a => a.children.forEach(c => { if(c.material === invisibleHitboxMat) checkTargets.push(c); }));
+            minecarts.forEach(m => m.children.forEach(c => { if(c.material === invisibleHitboxMat) checkTargets.push(c); }));
+            fishes.forEach(f => f.children.forEach(c => { if(c.material === invisibleHitboxMat) checkTargets.push(c); }));
+
+            const intersects = raycaster.intersectObjects(checkTargets, false);
+            if (intersects.length > 0 && intersects[0].distance <= 8) {
+                const intersect = intersects[0];
+                if (event.button === 0) {
+                    let obj = intersect.object;
+                    while (obj && !obj.userData.isAnimal && !obj.userData.isMinecart && !obj.userData.isFish && !obj.userData.mainKey) { obj = obj.parent; }
+
+                    if (obj && obj.userData.isAnimal) {
+                        scene.remove(obj);
+                        animals.splice(animals.indexOf(obj), 1);
+                    } else if (obj && obj.userData.isMinecart) {
+                        if (!obj.userData.riding) {
+                            scene.remove(obj);
+                            minecarts.splice(minecarts.indexOf(obj), 1);
+                        }
+                    } else if (obj && obj.userData.isFish) {
+                        scene.remove(obj);
+                        fishes.splice(fishes.indexOf(obj), 1);
+                    } else if (obj && obj.userData.mainKey) {
+                        removeBlockMesh(obj.userData.mainKey);
+                    }
+                } else if (event.button === 2) {
+                    const normal = intersect.face.normal;
+                    let p = intersect.object.parent && intersect.object.parent.isGroup && !intersect.object.parent.userData.isAnimal ?
+                            intersect.object.parent.position.clone().add(intersect.object.position) : intersect.object.position;
+
+                    const newX = Math.round(p.x + normal.x); const newY = Math.round(p.y + normal.y); const newZ = Math.round(p.z + normal.z);
+                    const selectedBlock = hotbarItems[currentSlotIndex];
+                    if (selectedBlock) {
+                        if (selectedBlock.type === 'cart') {
+                            // レール(id:101)の上をクリックした場合はそのレールのマス目にそのままトロッコを置く。
+                            // それ以外の場所では通常のブロックと同じく面の上に置く(その場合は動かない飾りのトロッコになる)。
+                            const clickedKey = `${Math.round(p.x)},${Math.round(p.y)},${Math.round(p.z)}`;
+                            const clickedMesh = activeBlocks[clickedKey];
+                            const isRailClicked = clickedMesh && clickedMesh.userData && clickedMesh.userData.blockId === 101;
+                            if (isRailClicked) addBlockMesh(Math.round(p.x), Math.round(p.y), Math.round(p.z), selectedBlock);
+                            else addBlockMesh(newX, newY, newZ, selectedBlock);
+                        } else if (selectedBlock.type === 'fish') {
+                            // 熱帯魚は水の中にしか置けないので、クリックしたマスそのものが水かどうかで判定する
+                            // (トロッコがレールのマスに直接置かれるのと同じ考え方)
+                            const clickedKey = `${Math.round(p.x)},${Math.round(p.y)},${Math.round(p.z)}`;
+                            const clickedMesh = activeBlocks[clickedKey];
+                            if (clickedMesh && clickedMesh.userData && clickedMesh.userData.isWater) {
+                                addBlockMesh(Math.round(p.x), Math.round(p.y), Math.round(p.z), selectedBlock);
+                            }
+                        } else {
+                            const playerYaw = cameraYaw;
+                            const normalizedYaw = (playerYaw % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+                            const exactYaw = (Math.round(normalizedYaw / (Math.PI / 2)) % 4 * (Math.PI / 2) + Math.PI) % (Math.PI * 2);
+
+                            const waterLvl = selectedBlock.isWater ? 3 : 0;
+                            addBlockMesh(newX, newY, newZ, selectedBlock, exactYaw, waterLvl);
+                            if (selectedBlock.isWater) scheduleWaterEnclosureCheck(newX, newY, newZ);
+                        }
+                    }
+                }
+            }
+        }
+        document.addEventListener('mousedown', handlePointerAction);
+        const highlightGeo = new THREE.BoxGeometry(1.01, 1.01, 1.01);
+        const highlightMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 });
+        const highlightMesh = new THREE.LineSegments(new THREE.EdgesGeometry(highlightGeo), highlightMat);
+        highlightMesh.visible = false; scene.add(highlightMesh);
+        function checkCollision(px, py, pz) {
+            const pMinX = px - 0.3, pMaxX = px + 0.3; const pMinY = py, pMaxY = py + 1.8; const pMinZ = pz - 0.3, pMaxZ = pz + 0.3;
+            const bMinX = Math.round(pMinX - 0.5), bMaxX = Math.round(pMaxX + 0.5);
+            const bMinY = Math.round(pMinY - 0.5), bMaxY = Math.round(pMaxY + 0.5);
+            const bMinZ = Math.round(pMinZ - 0.5), bMaxZ = Math.round(pMaxZ + 0.5);
+
+            for (let x = bMinX; x <= bMaxX; x++) {
+                for (let y = bMinY; y <= bMaxY; y++) {
+                    for (let z = bMinZ; z <= bMaxZ; z++) {
+                        const mesh = activeBlocks[`${x},${y},${z}`];
+                        if (mesh && !mesh.userData.isWater) {
+                            if (mesh.userData && mesh.userData.isFurniture && !mesh.userData.isFence) {
+                                if (mesh.userData.isDoor && mesh.userData.isOpen) continue;
+                                let isShort = false;
+                                mesh.children.forEach(child => {
+                                    if (child.geometry && child.geometry.parameters && child.geometry.parameters.height < 0.2) isShort = true;
+                                });
+                                if (isShort) continue;
+                            }
+                            if (pMinX < x + 0.5 && pMaxX > x - 0.5 && pMinY < y + 0.5 && pMaxY > y - 0.5 && pMinZ < z + 0.5 && pMaxZ > z - 0.5) return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        function checkAnimalCollision(px, py, pz) {
+            const pMinX = px - 0.3, pMaxX = px + 0.3; const pMinY = py, pMaxY = py + 1.0; const pMinZ = pz - 0.3, pMaxZ = pz + 0.3;
+            const bMinX = Math.round(pMinX - 0.5), bMaxX = Math.round(pMaxX + 0.5);
+            const bMinY = Math.round(pMinY - 0.5), bMaxY = Math.round(pMaxY + 0.5);
+            const bMinZ = Math.round(pMinZ - 0.5), bMaxZ = Math.round(pMaxZ + 0.5);
+
+            for (let x = bMinX; x <= bMaxX; x++) {
+                for (let y = bMinY; y <= bMaxY; y++) {
+                    for (let z = bMinZ; z <= bMaxZ; z++) {
+                        const mesh = activeBlocks[`${x},${y},${z}`];
+                        // 通常の家具(ベッド・チェスト等)は今まで通り動物をすり抜けさせるが、
+                        // フェンス(isFence)だけは柵として機能させるため衝突対象に含める
+                        if (mesh && !mesh.userData.isWater && (!mesh.userData.isFurniture || mesh.userData.isFence)) {
+                            if (pMinX < x + 0.5 && pMaxX > x - 0.5 && pMinY < y + 0.5 && pMaxY > y - 0.5 && pMinZ < z + 0.5 && pMaxZ > z - 0.5) return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+        function findAnimalGroundY(px, pz, fromY) {
+            // 落下中に1フレームの移動量が大きくなった場合(処理落ち等)でも、
+            // 「今いる場所の少し上」から真下に地面(水・家具を除く固体ブロック)を探して
+            // その真上の高さを返すことで、動物が地面の中に埋まってしまうのを防ぐ。
+            const startY = Math.ceil(fromY) + 1;
+            for (let y = startY; y >= startY - 24; y--) {
+                const mesh = activeBlocks[`${Math.round(px)},${y},${Math.round(pz)}`];
+                if (mesh && !mesh.userData.isWater && (!mesh.userData.isFurniture || mesh.userData.isFence)) return y + 0.5;
+            }
+            return null;
+        }
+        let lastWaterTick = performance.now();
+        function processWaterTick() {
+            if (waterUpdateQueue.size === 0) return;
+            const currentQueue = Array.from(waterUpdateQueue);
+            waterUpdateQueue.clear();
+            const toAddMap = new Map(); const toRemove = []; const triggers = [];
+            for (const key of currentQueue) {
+                const [x, y, z] = key.split(',').map(Number);
+                if (y < -15) { toRemove.push(key); continue; }
+                const currentMesh = activeBlocks[key];
+                if (!currentMesh || !currentMesh.userData.isWater) continue;
+                if (currentMesh.userData.drainingTick !== undefined) {
+                    currentMesh.userData.drainingTick--;
+                    if (currentMesh.userData.drainingTick <= 0) {
+                        toRemove.push(key);
+                        const dirs = [[1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]];
+                        for (let d of dirs) {
+                            if (d[1] === -1) continue;
+                            const nKey = `${x + d[0]},${y + d[1]},${z + d[2]}`;
+                            const nMesh = activeBlocks[nKey];
+                            if (nMesh && nMesh.userData.isWater && nMesh.userData.drainingTick === undefined) {
+                                nMesh.userData.drainingTick = 2; triggers.push(nKey);
+                            }
+                        }
+                    } else triggers.push(key);
+                    continue;
+                }
+                let level = currentMesh.userData.waterLevel;
+                if (level === undefined) level = 15;
+                // (以前はlevelが0まで下がった水が自然蒸発する仕様だったが、
+                //  囲われた水たまりが勝手に消えてしまうため廃止。水は壁を壊されるまで居座る。
+                //  level<=0でも下に支えがなければ普通に流れ落ちるし、横spreadは
+                //  spreadLevelが負になるので自然に止まる)
+                const bottomKey = `${x},${y-1},${z}`;
+                const bottomMesh = activeBlocks[bottomKey];
+
+                if (!bottomMesh) {
+                    if (!toAddMap.has(bottomKey) || toAddMap.get(bottomKey).level < level) toAddMap.set(bottomKey, {x, y: y-1, z, level});
+                } else {
+                    let spreadLevel = level - 1;
+                    if (bottomMesh.userData.blockId === 1 || bottomMesh.userData.blockId === 2) spreadLevel = Math.min(spreadLevel, 2);
+                    if (spreadLevel >= 0) {
+                        const dirs = [[1,0,0], [-1,0,0], [0,0,1], [0,0,-1]];
+                        for (let d of dirs) {
+                            const nKey = `${x+d[0]},${y},${z+d[2]}`;
+                            if (!activeBlocks[nKey]) {
+                                if (!toAddMap.has(nKey) || toAddMap.get(nKey).level < spreadLevel) toAddMap.set(nKey, {x: x+d[0], y, z: z+d[2], level: spreadLevel});
+                            }
+                        }
+                    }
+                }
+            }
+            for (const key of toRemove) removeBlockMesh(key);
+            for (const [key, item] of toAddMap.entries()) {
+                const existingMesh = activeBlocks[`${item.x},${item.y},${item.z}`];
+                if (existingMesh && existingMesh.userData.isWater) {
+                    if (existingMesh.userData.waterLevel < item.level) {
+                        existingMesh.userData.waterLevel = item.level;
+                        existingMesh.userData.drainingTick = undefined;
+                        waterUpdateQueue.add(`${item.x},${item.y},${item.z}`);
+                    }
+                } else addBlockMesh(item.x, item.y, item.z, ALL_BLOCKS_MAP[99], 0, item.level);
+            }
+            for (const t of triggers) waterUpdateQueue.add(t);
+        }
+        let prevTime = performance.now(); let smoothCameraY = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+            // チャンク生成などで1フレームの処理が重くなった直後でも、
+            // 物理演算が一気に大きく動いてすり抜け・埋まりが起きないよう経過時間の上限を設ける
+            const delta = Math.min((time - prevTime) / 1000, 0.05);
+            if (time - lastWaterTick > 200) {
+                processWaterTick(); lastWaterTick = time;
+            }
+            // プレイヤーが新しいチャンクに入ったら周囲のチャンクをキューに追加し、
+            // 1フレームにつき1チャンクずつ生成することでカクつきを抑えながら地形を広げていく
+            const curChunkX = Math.floor(playerGroup.position.x / CHUNK_SIZE);
+            const curChunkZ = Math.floor(playerGroup.position.z / CHUNK_SIZE);
+            if (curChunkX !== lastChunkX || curChunkZ !== lastChunkZ) {
+                lastChunkX = curChunkX; lastChunkZ = curChunkZ;
+                requestChunksAroundPlayer();
+            }
+            if (chunkGenQueue.length > 0) {
+                const next = chunkGenQueue.shift();
+                pendingChunkKeys.delete(`${next.cx},${next.cz}`);
+                generateChunk(next.cx, next.cz);
+            }
+            const pX = Math.floor(playerGroup.position.x + 0.5);
+            const pY = Math.floor(playerGroup.position.y);
+            const pZ = Math.floor(playerGroup.position.z + 0.5);
+            const currentBlock = activeBlocks[`${pX},${pY},${pZ}`];
+            const headBlock = activeBlocks[`${pX},${pY + 1},${pZ}`];
+            isInWater = currentBlock && currentBlock.userData && currentBlock.userData.isWater;
+            const isHeadInWater = headBlock && headBlock.userData && headBlock.userData.isWater;
+            if (isHeadInWater) {
+                document.getElementById('underwater-overlay').style.display = 'block';
+                scene.fog.color.setHex(0x0a3296); scene.fog.near = 1; scene.fog.far = 10; scene.background.setHex(0x0a3296);
+            } else {
+                document.getElementById('underwater-overlay').style.display = 'none';
+                scene.fog.color.setHex(0x87CEEB); scene.fog.near = 20; scene.fog.far = 60; scene.background.setHex(0x87CEEB);
+            }
+            if (isLocked) {
+                yawGroup.rotation.y = cameraYaw; pitchGroup.rotation.x = cameraPitch; headGroup.rotation.x = cameraPitch;
+                let checkTargets = [...blockMeshes];
+                animals.forEach(a => a.children.forEach(c => { if(c.material === invisibleHitboxMat) checkTargets.push(c); }));
+            minecarts.forEach(m => m.children.forEach(c => { if(c.material === invisibleHitboxMat) checkTargets.push(c); }));
+            fishes.forEach(f => f.children.forEach(c => { if(c.material === invisibleHitboxMat) checkTargets.push(c); }));
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                const intersects = raycaster.intersectObjects(checkTargets, false);
+
+                if (intersects.length > 0 && intersects[0].distance <= 8) {
+                    const intersect = intersects[0];
+                    let p = intersect.object.parent && intersect.object.parent.isGroup && !intersect.object.parent.userData.isAnimal ?
+                            intersect.object.parent.position.clone().add(intersect.object.position) : intersect.object.position;
+                    highlightMesh.position.copy(p); highlightMesh.visible = true;
+                } else highlightMesh.visible = false;
+                if (isSwinging) {
+                    swingTime += delta;
+                    if (swingTime >= SWING_DURATION) {
+                        isSwinging = false; swingTime = 0; toolPivot.rotation.x = 0; fpToolPivot.rotation.x = 0;
+                    } else {
+                        const angle = Math.sin((swingTime / SWING_DURATION) * Math.PI);
+                        toolPivot.rotation.x = -angle * (Math.PI / 2.5); fpToolPivot.rotation.x = -angle * (Math.PI / 2.5);
+                    }
+                }
+                const currentSpeed = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+                if (canJump && !isInWater) {
+                    if (currentSpeed > 2.0) {
+                        const angle = Math.sin((time / 1000) * 12) * 0.8;
+                        rightArmPivot.rotation.x = angle; leftArmPivot.rotation.x = -angle; rightLegPivot.rotation.x = -angle; leftLegPivot.rotation.x = angle;
+                    } else { rightArmPivot.rotation.x = 0; leftArmPivot.rotation.x = 0; rightLegPivot.rotation.x = 0; leftLegPivot.rotation.x = 0; }
+                    rightArmPivot.rotation.z = 0; leftArmPivot.rotation.z = 0;
+                } else {
+                    rightArmPivot.rotation.x = 0.5; leftArmPivot.rotation.x = 0.5; rightArmPivot.rotation.z = -0.2; leftArmPivot.rotation.z = 0.2;
+                    rightLegPivot.rotation.x = -0.2; leftLegPivot.rotation.x = 0.2;
+                }
+                if (currentRidingCart) {
+                    // トロッコに乗車中はプレイヤー自身の物理演算を止め、トロッコの位置に追従させる
+                    updateMinecartRide(delta);
+                } else {
+                    velocity.x -= velocity.x * 10.0 * delta;
+                    velocity.z -= velocity.z * 10.0 * delta;
+
+                    if (isInWater) {
+                        velocity.x -= velocity.x * 5.0 * delta;
+                        velocity.z -= velocity.z * 5.0 * delta;
+                        if (moveUp) velocity.y = 4.0;
+                        else { velocity.y -= 5.0 * delta; if (velocity.y < -3.0) velocity.y = -3.0; }
+                    } else {
+                        if (isFlying) {
+                            velocity.y = 0;
+                            if (moveUp) velocity.y = 10.0;
+                            if (moveDown) velocity.y = -10.0;
+                        } else velocity.y -= 30.0 * delta;
+                    }
+                    direction.z = Number(moveForward) - Number(moveBackward); direction.x = Number(moveRight) - Number(moveLeft); direction.normalize();
+                    if (moveForward || moveBackward) velocity.z -= direction.z * 50.0 * delta; if (moveLeft || moveRight) velocity.x -= direction.x * 50.0 * delta;
+                    const euler = new THREE.Euler(0, cameraYaw, 0, 'YXZ');
+                    const right = new THREE.Vector3(1, 0, 0).applyEuler(euler); const forward = new THREE.Vector3(0, 0, -1).applyEuler(euler);
+                    let dx = right.x * (-velocity.x * delta) + forward.x * (-velocity.z * delta); let dz = right.z * (-velocity.x * delta) + forward.z * (-velocity.z * delta);
+                    let dy = velocity.y * delta; let pos = playerGroup.position.clone();
+                    pos.y += dy;
+                    if (checkCollision(pos.x, pos.y, pos.z)) {
+                        if (dy < 0) { pos.y = Math.floor(pos.y) + 0.5; velocity.y = 0; canJump = true; isFlying = false; }
+                        else if (dy > 0) { pos.y = Math.ceil(pos.y + 1.8) - 0.5 - 1.8; velocity.y = 0; }
+                    } else canJump = false;
+                    pos.x += dx;
+                    if (checkCollision(pos.x, pos.y, pos.z)) { if (!checkCollision(pos.x, pos.y + 1, pos.z)) pos.y += 1; else { pos.x -= dx; velocity.x = 0; } }
+                    pos.z += dz;
+                    if (checkCollision(pos.x, pos.y, pos.z)) { if (!checkCollision(pos.x, pos.y + 1, pos.z)) pos.y += 1; else { pos.z -= dz; velocity.z = 0; } }
+                    playerGroup.position.copy(pos);
+                    if (playerGroup.position.y < -50) { playerGroup.position.set(0, 20, 0); velocity.set(0, 0, 0); }
+                    checkMinecartProximity();
+                }
+                if (smoothCameraY === 0) smoothCameraY = playerGroup.position.y;
+                smoothCameraY += (playerGroup.position.y - smoothCameraY) * 15.0 * delta;
+                pitchGroup.position.y = 1.6 + (smoothCameraY - playerGroup.position.y); headGroup.position.y = 1.6 + (smoothCameraY - playerGroup.position.y);
+                document.getElementById('coordinates').innerText = `${Math.floor(playerGroup.position.x)}, ${Math.floor(playerGroup.position.y)}, ${Math.floor(playerGroup.position.z)}`;
+            }
+            const pPos = playerGroup.position;
+            Object.values(activeBlocks).forEach(mesh => {
+                if (mesh && mesh.userData && mesh.userData.isDoor) {
+                    const doorPos = mesh.position.clone();
+                    const distXZ = Math.sqrt(Math.pow(pPos.x - doorPos.x, 2) + Math.pow(pPos.z - doorPos.z, 2));
+                    const isOpen = distXZ < 1.0;
+                    if (mesh.userData.isOpen !== isOpen) {
+                        mesh.userData.isOpen = isOpen;
+                        if (mesh.userData.pivotGroup) mesh.userData.pivotGroup.rotation.y = isOpen ? -Math.PI / 2 : 0;
+                        mesh.children.forEach(child => {
+                            if (child.material === invisibleHitboxMat) child.visible = !isOpen;
+                        });
+                    }
+                }
+            });
+            animals.forEach(animal => {
+                const data = animal.userData;
+                // 猫・犬はプレイヤーから10ブロック以上離れないよう、離れすぎたら追いかけてくる
+                // (isCat/isDogを持たない牛・羊はこれまで通りランダムに歩き回るだけ)
+                if (data.isCat || data.isDog) {
+                    const toPlayerX = playerGroup.position.x - animal.position.x;
+                    const toPlayerZ = playerGroup.position.z - animal.position.z;
+                    const distToPlayer = Math.sqrt(toPlayerX * toPlayerX + toPlayerZ * toPlayerZ);
+                    if (distToPlayer > 10) {
+                        data.isWalking = true;
+                        data.targetYaw = Math.atan2(toPlayerX, toPlayerZ);
+                        data.walkTimer = 0.4;
+                    }
+                }
+                data.walkTimer -= delta;
+
+                if (data.targetYaw === undefined) data.targetYaw = data.yaw;
+
+                if (data.walkTimer <= 0) {
+                    data.isWalking = Math.random() > 0.4;
+                    if (data.isWalking) {
+                        data.walkTimer = Math.random() * 4 + 3;
+                        data.targetYaw = data.yaw + (Math.random() - 0.5) * (Math.PI / 1.5);
+                    } else {
+                        data.walkTimer = Math.random() * 5 + 3;
+                        if (Math.random() > 0.3) data.targetYaw = data.yaw + (Math.random() - 0.5) * Math.PI;
+                    }
+                }
+                data.velocity.y -= 30.0 * delta;
+                let dy = data.velocity.y * delta;
+                let pos = animal.position.clone();
+                pos.y += dy;
+                if (checkAnimalCollision(pos.x, pos.y, pos.z)) {
+                    if (dy < 0) {
+                        const groundY = findAnimalGroundY(pos.x, pos.z, pos.y);
+                        pos.y = (groundY !== null) ? groundY : (Math.ceil(pos.y) - 0.5);
+                        data.velocity.y = 0;
+                    } else if (dy > 0) {
+                        pos.y = Math.floor(pos.y) - 0.5;
+                        data.velocity.y = 0;
+                    }
+                }
+
+                if (data.isWalking) {
+                    // dataにspeedが無ければ従来通り0.3(牛はこれまで通りの速さのまま変化しない)
+                    const speed = data.speed || 0.3;
+                    const dx = Math.sin(animal.rotation.y) * speed * delta;
+                    const dz = Math.cos(animal.rotation.y) * speed * delta;
+
+                    pos.x += dx;
+                    if (checkAnimalCollision(pos.x, pos.y, pos.z)) {
+                        // canStepUpを持つ動物(羊)だけ、頭上が空いていれば1ブロックの段差を乗り越える
+                        if (data.canStepUp && !checkAnimalCollision(pos.x, pos.y + 1, pos.z)) {
+                            pos.y += 1;
+                        } else {
+                            pos.x -= dx;
+                            data.targetYaw += Math.PI * 0.7;
+                            data.isWalking = false;
+                        }
+                    }
+
+                    pos.z += dz;
+                    if (checkAnimalCollision(pos.x, pos.y, pos.z)) {
+                        if (data.canStepUp && !checkAnimalCollision(pos.x, pos.y + 1, pos.z)) {
+                            pos.y += 1;
+                        } else {
+                            pos.z -= dz;
+                            data.targetYaw += Math.PI * 0.7;
+                            data.isWalking = false;
+                        }
+                    }
+
+                    const legAngle = Math.sin((time / 1000) * 3.0) * 0.25;
+                    data.legs[0].rotation.x = legAngle; data.legs[1].rotation.x = -legAngle;
+                    data.legs[2].rotation.x = -legAngle; data.legs[3].rotation.x = legAngle;
+                } else {
+                    data.legs.forEach(leg => leg.rotation.x += (0 - leg.rotation.x) * 5.0 * delta);
+                }
+
+                animal.position.copy(pos);
+
+                // 猫・犬は、歩いていない(止まっている)時は常にプレイヤーの方を向くようにする
+                // (ランダムな徘徊の向き決定より後にここで上書きすることで、確実にプレイヤー方向を向かせる)
+                if ((data.isCat || data.isDog) && !data.isWalking) {
+                    const toPlayerX = playerGroup.position.x - animal.position.x;
+                    const toPlayerZ = playerGroup.position.z - animal.position.z;
+                    data.targetYaw = Math.atan2(toPlayerX, toPlayerZ);
+                }
+
+                let yawDiff = data.targetYaw - data.yaw;
+                while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+                while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+                data.yaw += yawDiff * 1.5 * delta;
+                animal.rotation.y = data.yaw;
+            });
+            // ==================== 熱帯魚(水の中だけを泳ぎ、水が無くなると消える) ====================
+            if (fishes.length > 0) {
+                const fishToRemove = [];
+                fishes.forEach(fish => {
+                    const data = fish.userData;
+                    const curKey = `${Math.round(fish.position.x)},${Math.round(fish.position.y)},${Math.round(fish.position.z)}`;
+                    const curMesh = activeBlocks[curKey];
+                    if (!curMesh || !curMesh.userData.isWater) {
+                        // 今いる場所が水でなくなった(水が抜けた/水槽の外に出た)ので消える
+                        fishToRemove.push(fish);
+                        return;
+                    }
+                    data.wanderTimer -= delta;
+                    if (data.wanderTimer <= 0) {
+                        data.wanderTimer = Math.random() * 2.5 + 1.5;
+                        data.dir.set((Math.random() - 0.5), (Math.random() - 0.5) * 0.6, (Math.random() - 0.5)).normalize();
+                    }
+                    // 次に進む先が水でなければ移動せず向きだけ変える(=水槽の壁やガラスの外には出られない)
+                    const moveVec = data.dir.clone().multiplyScalar(data.speed * delta);
+                    const nextPos = fish.position.clone().add(moveVec);
+                    const nextKey = `${Math.round(nextPos.x)},${Math.round(nextPos.y)},${Math.round(nextPos.z)}`;
+                    const nextMesh = activeBlocks[nextKey];
+                    if (nextMesh && nextMesh.userData.isWater) {
+                        fish.position.copy(nextPos);
+                    } else {
+                        data.dir.set((Math.random() - 0.5), (Math.random() - 0.5) * 0.6, (Math.random() - 0.5)).normalize();
+                        data.wanderTimer = Math.random() * 1.2 + 0.4;
+                    }
+                    const horizLen = Math.sqrt(data.dir.x * data.dir.x + data.dir.z * data.dir.z);
+                    fish.rotation.y = Math.atan2(data.dir.x, data.dir.z);
+                    fish.rotation.x = Math.atan2(-data.dir.y, horizLen);
+                });
+                fishToRemove.forEach(fish => {
+                    scene.remove(fish);
+                    const idx = fishes.indexOf(fish);
+                    if (idx > -1) fishes.splice(idx, 1);
+                });
+            }
+            renderer.render(scene, camera); prevTime = time;
+        }
+        initHotbar(); updateHotbarSelection();
+        requestChunksAroundPlayer();
+        animate();
+
+        // ==================== Firebaseセーブ機能・ログイン ====================
+        // 【ステップ1】UIとFirebase初期化・ログイン・確認ダイアログの追加。
+        // ここより上のゲーム本体(3D描画・操作・ブロック・家具・トロッコ・リスポーン等)のロジックは
+        // 一切変更していない。ゲーム本体はページ読み込みと同時に今まで通り初期化・描画が始まるが、
+        // #title-screen(z-index:200)が#blocker(z-index:30)よりさらに手前を覆っているため、
+        // ログイン/ゲストプレイの選択が完了するまでプレイヤーはゲーム画面に触れられない。
+        //
+        // 実際のワールドデータ(activeBlocksの内容やプレイヤー位置など)をFirestoreへ
+        // 保存・復元する具体的な処理は【ステップ2】で実装予定のため、
+        // ここでは loadWorldFromData() / collectWorldData() をTODOコメント付きのスタブとし、
+        // 呼び出しタイミング(ログイン直後・データ有無確認後・3分ごとのオートセーブ)の配線のみを用意している。
+
+        // ↓↓↓ ご自身のFirebaseプロジェクトの設定値に置き換えてください ↓↓↓
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        // Firebase関連オブジェクトは、初期化に失敗しても(CDN読み込み失敗等)
+        // ゲスト用のボタンだけは動かせるよう、tryブロックの外側で宣言しておく。
+        let fbAuth = null;
+        let fbDb = null;
+        let fbGoogleProvider = null;
+        let currentUser = null;
+        let isGuestPlay = false;
+        let autoSaveTimer = null;
+        const AUTO_SAVE_INTERVAL_MS = 3 * 60 * 1000; // 3分ごとにオートセーブ
+
+        const titleScreen = document.getElementById('title-screen');
+        const titleLoading = document.getElementById('title-loading');
+        const titleLoginButtons = document.getElementById('title-login-buttons');
+        const titleUserInfo = document.getElementById('title-user-info');
+        const googleLoginBtn = document.getElementById('google-login-btn');
+        const guestPlayBtn = document.getElementById('guest-play-btn');
+        const loadWorldPromptOverlay = document.getElementById('load-world-prompt-overlay');
+        const loadWorldYesBtn = document.getElementById('load-world-yes');
+        const loadWorldNoBtn = document.getElementById('load-world-no');
+        const guestConfirmOverlay = document.getElementById('guest-confirm-overlay');
+        const guestConfirmYesBtn = document.getElementById('guest-confirm-yes');
+        const guestConfirmNoBtn = document.getElementById('guest-confirm-no');
+
+        // タイトル画面を隠してゲーム画面(既存の#blocker「画面をクリック/タップしてプレイ開始」)へ引き渡す。
+        // これ以降の挙動(ポインタロック・W/A/S/D移動・破壊/設置・インベントリ・トロッコ・リスポーン等)は
+        // すべて既存のロジックがそのまま担当する。
+        function enterGame() {
+            if (titleScreen) titleScreen.style.display = 'none';
+        }
+
+        // ---- ワールドデータの読み込み・収集(スタブ: ステップ2で実装) ----
+        function loadWorldFromData(worldData) {
+            // TODO(ステップ2): worldDataから activeBlocks・地形・動物・トロッコ・プレイヤー位置・
+            //                   インベントリなどを実際に復元する処理をここに実装する。
+            console.info('[Firebaseセーブ] ワールドデータの復元処理は未実装のため、現在の地形のままスタートします。', worldData);
+        }
+        function collectWorldData() {
+            // TODO(ステップ2): activeBlocks・プレイヤー位置・インベントリなどを
+            //                   保存用のプレーンオブジェクトにまとめて返すようにする。
+            return {
+                lastSaved: firebase.firestore.FieldValue.serverTimestamp()
+            };
+        }
+        function saveWorldData() {
+            if (!fbDb || !currentUser || isGuestPlay) return; // ログイン中かつゲストプレイでない場合のみ保存
+            fbDb.collection('users').doc(currentUser.uid).set(
+                { worldData: collectWorldData() }, { merge: true }
+            ).then(() => {
+                console.info('[Firebaseセーブ] オートセーブが完了しました。');
+            }).catch((err) => {
+                console.error('[Firebaseセーブ] 保存に失敗しました。', err);
+            });
+        }
+        function startAutoSave() {
+            if (autoSaveTimer) clearInterval(autoSaveTimer);
+            autoSaveTimer = setInterval(saveWorldData, AUTO_SAVE_INTERVAL_MS);
+        }
+        function stopAutoSave() {
+            if (autoSaveTimer) { clearInterval(autoSaveTimer); autoSaveTimer = null; }
+        }
+
+        // ---- ゲストプレイ(ログインしない)の確認ダイアログ ----
+        // Firebaseの初期化に失敗していても、ゲストプレイはFirebaseに依存しないため常に動作する。
+        guestPlayBtn.addEventListener('click', () => {
+            guestConfirmOverlay.style.display = 'flex';
+        });
+        guestConfirmYesBtn.addEventListener('click', () => {
+            guestConfirmOverlay.style.display = 'none';
+            isGuestPlay = true;
+            stopAutoSave(); // ゲストプレイ中はオートセーブを行わない
+            enterGame();
+        });
+        guestConfirmNoBtn.addEventListener('click', () => {
+            guestConfirmOverlay.style.display = 'none';
+        });
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            fbAuth = firebase.auth();
+            fbDb = firebase.firestore();
+            fbGoogleProvider = new firebase.auth.GoogleAuthProvider();
+
+            // ---- ログイン後、保存データの有無を確認してダイアログを出し分ける ----
+            function checkSavedDataAndProceed(user) {
+                titleLoading.style.display = 'block';
+                titleLoading.textContent = 'セーブデータを確認しています…';
+                titleLoginButtons.style.display = 'none';
+                fbDb.collection('users').doc(user.uid).get().then((doc) => {
+                    if (doc.exists && doc.data() && doc.data().worldData) {
+                        // 前回のセーブデータが存在する => 読み込むかどうかを確認する
+                        titleLoading.style.display = 'none';
+                        loadWorldPromptOverlay.style.display = 'flex';
+                    } else {
+                        // セーブデータなし(初回プレイ) => そのまま新規ワールドで開始しオートセーブを開始する
+                        isGuestPlay = false;
+                        startAutoSave();
+                        enterGame();
+                    }
+                }).catch((err) => {
+                    console.error('[Firebaseセーブ] セーブデータの確認に失敗しました。', err);
+                    titleLoading.style.display = 'block';
+                    titleLoading.textContent = 'セーブデータの確認に失敗しました。新規ワールドで開始します。';
+                    setTimeout(() => { isGuestPlay = false; startAutoSave(); enterGame(); }, 1500);
+                });
+            }
+
+            loadWorldYesBtn.addEventListener('click', () => {
+                loadWorldPromptOverlay.style.display = 'none';
+                fbDb.collection('users').doc(currentUser.uid).get().then((doc) => {
+                    const data = doc.exists ? doc.data() : null;
+                    if (data && data.worldData) loadWorldFromData(data.worldData);
+                    isGuestPlay = false;
+                    startAutoSave();
+                    enterGame();
+                }).catch((err) => {
+                    console.error('[Firebaseセーブ] ワールドデータの取得に失敗しました。', err);
+                    isGuestPlay = false;
+                    startAutoSave();
+                    enterGame();
+                });
+            });
+            loadWorldNoBtn.addEventListener('click', () => {
+                loadWorldPromptOverlay.style.display = 'none';
+                isGuestPlay = false;
+                startAutoSave();
+                enterGame();
+            });
+
+            // ---- Googleアカウントでのログイン(パスワード入力不要のポップアップログイン) ----
+            googleLoginBtn.addEventListener('click', () => {
+                titleLoading.style.display = 'block';
+                titleLoading.textContent = 'ログイン中です…';
+                titleLoginButtons.style.display = 'none';
+                fbAuth.signInWithPopup(fbGoogleProvider).catch((err) => {
+                    console.error('[Firebaseログイン] ログインに失敗しました。', err);
+                    titleLoading.style.display = 'none';
+                    titleLoginButtons.style.display = 'block';
+                    alert('ログインに失敗しました。もう一度お試しください。');
+                });
+            });
+
+            // ---- ログイン状態の自動復元 ----
+            // 2回目以降のアクセスでは、ボタン操作なしに自動でログイン状態が復元され、
+            // そのままセーブデータ確認 => (あれば)読み込み確認ダイアログ、という流れに進む。
+            fbAuth.onAuthStateChanged((user) => {
+                if (user) {
+                    currentUser = user;
+                    isGuestPlay = false;
+                    titleUserInfo.style.display = 'block';
+                    titleUserInfo.textContent = (user.displayName || 'プレイヤー') + ' としてログイン中';
+                    checkSavedDataAndProceed(user);
+                } else {
+                    currentUser = null;
+                    titleLoading.style.display = 'none';
+                    titleUserInfo.style.display = 'none';
+                    titleLoginButtons.style.display = 'block';
+                }
+            });
+        } catch (err) {
+            // Firebase SDKの読み込みや初期化に失敗した場合でも、サイト自体が完全に
+            // プレイ不能にならないよう、ゲストプレイのみ利用できる状態にフォールバックする。
+            console.error('[Firebase初期化エラー] Firebaseの初期化に失敗しました。ゲストプレイのみ利用可能です。', err);
+            titleLoading.style.display = 'block';
+            titleLoading.textContent = 'Firebaseへの接続に失敗しました。ログインせずにプレイできます。';
+            titleLoginButtons.style.display = 'block';
+            if (googleLoginBtn) googleLoginBtn.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
