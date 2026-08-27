@@ -206,6 +206,8 @@
     <div id="title-screen">
         <div class="title-box">
             <h1>Voxel Game</h1>
+            <!-- file://で直接開いている等、Googleログインが原理的に使えない環境の場合にのみ表示する注意書き -->
+            <div id="title-protocol-warning" class="title-status" style="display:none; color:#ffaa55; max-width: 460px;"></div>
             <div id="title-login-buttons" style="display:none;">
                 <button id="google-login-btn" class="title-btn title-btn-google">Googleアカウントでログイン(セーブ可能)</button>
                 <button id="guest-play-btn" class="title-btn title-btn-guest">ログインせずにスタート(セーブ不可)</button>
@@ -2932,8 +2934,19 @@
         const titleLoading = document.getElementById('title-loading');
         const titleLoginButtons = document.getElementById('title-login-buttons');
         const titleUserInfo = document.getElementById('title-user-info');
+        const titleProtocolWarning = document.getElementById('title-protocol-warning');
         const googleLoginBtn = document.getElementById('google-login-btn');
         const guestPlayBtn = document.getElementById('guest-play-btn');
+        // Firebaseの仕様上、Googleポップアップログインは http:// または https:// でしか動作しない
+        // (file://で直接ファイルを開いている場合は auth/operation-not-supported-in-this-environment になる)。
+        const isHttpProtocol = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        if (!isHttpProtocol && titleProtocolWarning) {
+            titleProtocolWarning.style.display = 'block';
+            titleProtocolWarning.textContent =
+                '⚠ このファイルを直接開いている(file://)ため、Googleログインは使用できません。' +
+                'ローカルサーバー(http://localhost 等)経由で開くか、Webサーバーに公開してください。' +
+                '「ログインせずにスタート」なら今のまま遊べます。';
+        }
         const loadWorldPromptOverlay = document.getElementById('load-world-prompt-overlay');
         const loadWorldYesBtn = document.getElementById('load-world-yes');
         const loadWorldNoBtn = document.getElementById('load-world-no');
@@ -3047,15 +3060,65 @@
             });
 
             // ---- Googleアカウントでのログイン(パスワード入力不要のポップアップログイン) ----
+            // Firebase Authのエラーコードから、原因が分かりやすい日本語メッセージを作る。
+            // (「ログインに失敗しました」だけでは原因が分からず調査できないため)
+            function describeFirebaseAuthError(err) {
+                const code = (err && err.code) || '';
+                switch (code) {
+                    case 'auth/unauthorized-domain':
+                        return 'このサイトのドメインが、Firebaseコンソールの「承認済みドメイン」に登録されていません。\n' +
+                            'Firebaseコンソール → Authentication → Settings → 承認済みドメイン に、\n' +
+                            '今このページを開いているドメイン(例: localhost や実際に公開しているドメイン)を追加してください。\n' +
+                            '※ファイルをダブルクリックして file:// で直接開いている場合は、Googleログインの仕組み上どうしても失敗します。\n' +
+                            'ローカルサーバー(http://localhost)経由で開くか、実際のWebサーバーにアップロードしてお試しください。';
+                    case 'auth/operation-not-allowed':
+                        return 'Googleログインが有効化されていません。\n' +
+                            'Firebaseコンソール → Authentication → Sign-in method で「Google」を有効にしてください。';
+                    case 'auth/popup-blocked':
+                        return 'ブラウザにポップアップをブロックされました。ポップアップブロックを解除してもう一度お試しください。';
+                    case 'auth/popup-closed-by-user':
+                    case 'auth/cancelled-popup-request':
+                        return 'ログインウィンドウが閉じられました。もう一度お試しください。';
+                    case 'auth/network-request-failed':
+                        return 'ネットワークエラーが発生しました。通信環境をご確認のうえ、もう一度お試しください。';
+                    case 'auth/configuration-not-found':
+                        return 'Firebaseプロジェクト側でAuthenticationが設定されていません。\n' +
+                            'Firebaseコンソール → Authentication → 使ってみる、から初期設定を行ってください。';
+                    case 'auth/operation-not-supported-in-this-environment':
+                        return 'この環境(file://で直接開いている、またはブラウザのWebストレージ(Cookie等)が\n' +
+                            '無効になっている)では、Googleログインが使用できません。\n' +
+                            'http://localhost などのWebサーバー経由で開き、Webストレージ(Cookie)を\n' +
+                            '有効にした状態でお試しください(プライベート/シークレットウィンドウでの\n' +
+                            '厳しいトラッキング防止設定が原因になっている場合もあります)。';
+                    default:
+                        return 'ログインに失敗しました。\n' +
+                            'エラーコード: ' + (code || '不明') + '\n' +
+                            (err && err.message ? err.message : '');
+                }
+            }
             googleLoginBtn.addEventListener('click', () => {
+                if (!isHttpProtocol) {
+                    // file://等では原理的にログインできないため、Firebaseに問い合わせる前に案内して止める
+                    alert(
+                        'このファイルを直接開いている(file://)ため、Googleログインは使用できません。\n' +
+                        '対処方法:\n' +
+                        '・パソコンでローカルサーバーを起動し、http://localhost 経由でこのページを開く\n' +
+                        '  (例: このindex.htmlがあるフォルダで「python -m http.server」を実行し、\n' +
+                        '       ブラウザで http://localhost:8000 を開く)\n' +
+                        '・または、Firebase Hostingなど実際のWebサーバーに公開してそのURLで開く\n\n' +
+                        'ログインせずに遊びたい場合は「ログインせずにスタート」を選んでください。'
+                    );
+                    return;
+                }
                 titleLoading.style.display = 'block';
                 titleLoading.textContent = 'ログイン中です…';
                 titleLoginButtons.style.display = 'none';
                 fbAuth.signInWithPopup(fbGoogleProvider).catch((err) => {
-                    console.error('[Firebaseログイン] ログインに失敗しました。', err);
+                    // 原因調査のため、エラーの詳細を必ずコンソールに出力しておく
+                    console.error('[Firebaseログイン] ログインに失敗しました。code=' + (err && err.code) + ' message=' + (err && err.message), err);
                     titleLoading.style.display = 'none';
                     titleLoginButtons.style.display = 'block';
-                    alert('ログインに失敗しました。もう一度お試しください。');
+                    alert(describeFirebaseAuthError(err));
                 });
             });
 
