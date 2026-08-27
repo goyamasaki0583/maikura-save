@@ -2904,14 +2904,18 @@
         // ここでは loadWorldFromData() / collectWorldData() をTODOコメント付きのスタブとし、
         // 呼び出しタイミング(ログイン直後・データ有無確認後・3分ごとのオートセーブ)の配線のみを用意している。
 
-        // ↓↓↓ ご自身のFirebaseプロジェクトの設定値に置き換えてください ↓↓↓
+        // ご自身のFirebaseプロジェクト(voxelgame-fd31c)の設定値
+        // 元のFirebaseコンソールのスニペットはESモジュール形式(import { initializeApp } from "firebase/app";)
+        // でしたが、このファイルはCDNの<script>タグで読み込む「v9 compat版」で統一しているため、
+        // 設定値(firebaseConfig)だけをそのまま使い、初期化は下の firebase.initializeApp(firebaseConfig)
+        // (compat形式のグローバルfirebaseオブジェクト経由)で行っています。
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT_ID.appspot.com",
-            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-            appId: "YOUR_APP_ID"
+            apiKey: "AIzaSyC30JLG_XGHkJd-1mvXMwlXWT8pEWoRlqg",
+            authDomain: "voxelgame-fd31c.firebaseapp.com",
+            projectId: "voxelgame-fd31c",
+            storageBucket: "voxelgame-fd31c.firebasestorage.app",
+            messagingSenderId: "842246788395",
+            appId: "1:842246788395:web:686a8f98302cec8f8ea16e"
         };
 
         // Firebase関連オブジェクトは、初期化に失敗しても(CDN読み込み失敗等)
